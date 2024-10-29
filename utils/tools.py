@@ -1,4 +1,4 @@
-import gc, importlib, logging, os, random, shutil, sys, time, yaml
+import argparse, gc, importlib, logging, os, random, shutil, sys, time, yaml
 from datetime import datetime
 
 import scipy.sparse, torch
@@ -92,6 +92,56 @@ def get_cur_time():
                 format(cur_time, cur_time.microsecond / 10000.0)
     return cur_time
 
+def parse_opt():
+    parser = argparse.ArgumentParser()
+    
+    # project information ==========================================================================
+    parser.add_argument('--exp_name', type=str, help='wandb project name')
+    parser.add_argument('--description', type=str, help='important notes')
+    parser.add_argument('--save_dir', type=str, 
+                             help='save important files, weights, etc., will be intialized if null')
+    parser.add_argument('--wandb_pj_name', type=str, help='wandb project name')
+    parser.add_argument('--wandb_entity', type=str, help='wandb account')
+    parser.add_argument('--disable_wandb', action='store_true')
+    parser.add_argument('--seed', type=int, help='initializing seed')
+    
+    # data =========================================================================================
+    parser.add_argument('--data_dir', type=str, help='data directory')
+
+    # GPU ==========================================================================================
+    parser.add_argument('--cuda_id', type=str, help='assign gpu')
+    
+    # training =====================================================================================
+    parser.add_argument('--save_best_model', action='store_true', 
+                                             help='save best model during training')
+    parser.add_argument('--skip_test_prediction', action='store_true')
+    parser.add_argument("--task_type", choices=["multi", "cite"])
+    parser.add_argument("--cell_type", choices=["all", "hsc", "eryp", "neup", 
+                                                "masp", "mkp", "bp", "mop"])
+    parser.add_argument('--model', choices=["ead", "unet"])
+
+    # ==============================================================================================
+
+    args = vars(parser.parse_args())
+    cli_args = [k for k in args.keys() if args[k] is not None and args[k] is not False]
+    
+    with open('utils/config.yaml', 'r') as f:
+        opt = yaml.safe_load(f)
+        opt = DotDict(opt)
+        for arg in cli_args: # update arguments if passed from command line; otherwise, use default
+            opt[arg] = args[arg]
+
+    cur_time = get_cur_time()
+    opt.cur_time = cur_time
+    if opt.save_dir is None:
+        opt.save_dir = os.path.join('runs/train', opt.exp_name, cur_time)
+    opt.weights_dir = os.path.join(opt.save_dir, 'weights')
+    opt.codes_dir = os.path.join(opt.save_dir, 'codes')
+    opt.device_info = torch.cuda.get_device_name(int(opt.cuda_id)) 
+    opt.device = f"cuda:{opt.cuda_id}"
+
+    return opt
+
 def set_redirect_printing(opt):
     training_info_log_path = os.path.join(opt.save_dir, "training_info.log")
     
@@ -113,7 +163,6 @@ def set_seed(seed=None):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
-
 
 ##################################### Task specific ################################################
 def get_group_id(metadata):
@@ -183,7 +232,7 @@ def load_dataset(data_dir, task_type, cell_type="all", split="train"):
     if batch_inputs_path is not None:
         batch_inputs_df = pd.read_parquet(os.path.join(data_dir, batch_inputs_path))
         metadata_df = pd.merge(metadata_df, batch_inputs_df, left_on="group", right_index=True)
-    assert len(metadata_df) == len(input_index)
+    assert len(metadata_df) == len(input_index), "metadata_df len != input_index len"
     print("load input values")
     start_time = time.time()
     train_inputs = scipy.sparse.load_npz(os.path.join(data_dir, inputs_path))

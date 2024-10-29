@@ -1,4 +1,4 @@
-import argparse, functools, gc, json, os, pickle, time, yaml
+import functools, gc, os, pickle, time
 
 import torch
 import numpy as np
@@ -291,56 +291,6 @@ class Objective(object):
 
         return corrscore
 
-def parse_opt():
-    parser = argparse.ArgumentParser()
-    
-    # project information ==========================================================================
-    parser.add_argument('--exp_name', type=str, help='wandb project name')
-    parser.add_argument('--description', type=str, help='important notes')
-    parser.add_argument('--save_dir', type=str, 
-                             help='save important files, weights, etc., will be intialized if null')
-    parser.add_argument('--wandb_pj_name', type=str, help='wandb project name')
-    parser.add_argument('--wandb_entity', type=str, help='wandb account')
-    parser.add_argument('--disable_wandb', action='store_true')
-    parser.add_argument('--seed', type=int, help='initializing seed')
-    
-    # data =========================================================================================
-    parser.add_argument('--data_dir', type=str, help='data directory')
-
-    # GPU ==========================================================================================
-    parser.add_argument('--cuda_id', type=str, help='assign gpu')
-    
-    # training =====================================================================================
-    parser.add_argument('--save_best_model', action='store_true', 
-                                             help='save best model during training')
-    parser.add_argument('--skip_test_prediction', action='store_true')
-    parser.add_argument("--task_type", choices=["multi", "cite"])
-    parser.add_argument("--cell_type", choices=["all", "hsc", "eryp", "neup", 
-                                                "masp", "mkp", "bp", "mop"])
-    parser.add_argument('--model', choices=["ead", "unet"])
-
-    # ==============================================================================================
-
-    args = vars(parser.parse_args())
-    cli_args = [k for k in args.keys() if args[k] is not None and args[k] is not False]
-    
-    with open('utils/config.yaml', 'r') as f:
-        opt = yaml.safe_load(f)
-        opt = DotDict(opt)
-        for arg in cli_args: # update arguments if passed from command line; otherwise, use default
-            opt[arg] = args[arg]
-
-    cur_time = get_cur_time()
-    opt.cur_time = cur_time
-    if opt.save_dir is None:
-        opt.save_dir = os.path.join('runs/train', opt.exp_name, cur_time)
-    opt.weights_dir = os.path.join(opt.save_dir, 'weights')
-    opt.codes_dir = os.path.join(opt.save_dir, 'codes')
-    opt.device_info = torch.cuda.get_device_name(int(opt.cuda_id)) 
-    opt.device = f"cuda:{opt.cuda_id}"
-
-    return opt
-
 
 def main():
     assert torch.cuda.is_available(), "**** No available GPUs."
@@ -352,21 +302,12 @@ def main():
 
     set_seed(opt.seed)
 
-    exit(0)
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--n_model_train_samples", type=int, default=-1)
-    parser.add_argument("--snapshot", default=None)
-    parser.add_argument("--param_path", metavar="PATH")
-    parser.add_argument("--out_dir", metavar="PATH", default="result")
-    parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
-    parser.add_argument("--cv_dump", action="store_true")
-    parser.add_argument("--cv_n_bagging", type=int, default=0)
-    parser.add_argument("--n_splits", type=int, default=3)
-    parser.add_argument("--pre_post_process_tuning", action="store_true")
-    parser.add_argument("--check_load_model", action="store_true")
-    parser.add_argument("--seed", type=int, default=42)
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument("--cv_dump", action="store_true")
+    # parser.add_argument("--cv_n_bagging", type=int, default=0)
+    # parser.add_argument("--n_splits", type=int, default=3)
+    # parser.add_argument("--pre_post_process_tuning", action="store_true")
+    # parser.add_argument("--check_load_model", action="store_true")
 
     cell_type_names = {
         "all": "all",
@@ -387,7 +328,7 @@ def main():
                                                     )
     test_inputs, test_metadata, _ = load_dataset(
                                             data_dir=opt.data_dir, 
-                                            task_type=args.task_type, 
+                                            task_type=opt.task_type, 
                                             split="test"
                                         )
 
@@ -398,9 +339,6 @@ def main():
         raise ValueError
 
     loaded_params = None
-    if args.param_path is not None:
-        with open(os.path.join(args.param_path)) as f:
-            loaded_params = json.load(f)
 
     def get_params_core(trial, pre_post_process_tuning=False):
         if loaded_params is not None:
@@ -455,25 +393,9 @@ def main():
         model = model_class(params)
         return model
 
-    if args.n_model_train_samples > 0:
-        np.random.seed(42)
-        all_row_indices = np.arange(train_inputs.shape[0])
-        np.random.shuffle(all_row_indices)
-        n_model_train_samples = args.n_model_train_samples
-        if n_model_train_samples > train_inputs.shape[0]:
-            n_model_train_samples = train_inputs.shape[0]
-        selected_rows_indices = all_row_indices[:n_model_train_samples]
-        train_inputs = train_inputs[selected_rows_indices]
-        train_metadata = train_metadata.iloc[selected_rows_indices]
-        train_target = train_target[selected_rows_indices]
     print("train sample size:", train_inputs.shape[0])
 
 
-
-
-    print("dump params")
-    with open(os.path.join(args.out_dir, "params.json"), "w") as f:
-        json.dump(params, f, indent=2)
 
     cv = CrossVaridation()
     result_df, k_fold_models, k_fold_pre_post_processes = cv.compute_score(
@@ -530,14 +452,8 @@ def main():
         with open(os.path.join(model_dir, "pre_post_process.pickle"), "wb") as f:
             pickle.dump(pre_post_process, f)
         model.save(model_dir)
-        if args.check_load_model:
-            with open(os.path.join(model_dir, "pre_post_process.pickle"), "rb") as f:
-                _ = pickle.load(f)
-            loaded_model = build_model(params=None)
-            loaded_model.load(model_dir)
-        if args.cell_type != "all":
-            s = test_metadata["cell_type"] == cell_type_names[args.cell_type]
-            y_test_pred[~s] = np.nan
+
+
         print("save results")
         if args.task_type == "multi":
             pred_file_path = "multimodal_pred.pickle"
@@ -545,7 +461,7 @@ def main():
             pred_file_path = "citeseq_pred.pickle"
         else:
             raise ValueError
-        with open(os.path.join(args.out_dir, pred_file_path), "wb") as f:
+        with open(os.path.join(args.weights, pred_file_path), "wb") as f:
             pickle.dump(y_test_pred, f)
     print("completed !")
 

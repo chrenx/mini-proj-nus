@@ -14,6 +14,7 @@ from sklearn.model_selection import GroupKFold, KFold, ShuffleSplit
 # from ss_opm.utility.get_group_id import get_group_id
 # from ss_opm.utility.get_metadata_pattern import get_metadata_pattern
 # from ss_opm.utility.get_selector_with_metadata_pattern import get_selector_with_metadata_pattern
+# from ss_opm.utility.load_dataset import load_dataset
 # from ss_opm.utility.row_normalize import row_normalize
 from utils import *
 
@@ -303,6 +304,9 @@ def parse_opt():
     parser.add_argument('--wandb_entity', type=str, help='wandb account')
     parser.add_argument('--disable_wandb', action='store_true')
     parser.add_argument('--seed', type=int, help='initializing seed')
+    parser.add_argument("--task_type", choices=["multi", "cite"])
+    parser.add_argument("--cell_type", choices=["all", "hsc", "eryp", "neup", 
+                                                "masp", "mkp", "bp", "mop"])
     
     # data =========================================================================================
     parser.add_argument('--data_dir', type=str, help='data directory')
@@ -313,11 +317,6 @@ def parse_opt():
     # training =====================================================================================
     parser.add_argument('--save_best_model', action='store_true', 
                                              help='save best model during training')
-    parser.add_argument('--skip_test_prediction', action='store_true')
-    parser.add_argument("--task_type", choices=["multi", "cite"])
-    parser.add_argument("--cell_type", choices=["all", "hsc", "eryp", "neup", 
-                                                "masp", "mkp", "bp", "mop"])
-    parser.add_argument('--model', choices=["ead", "unet"])
 
     # ==============================================================================================
 
@@ -350,24 +349,28 @@ def main():
 
     set_redirect_printing(opt)
 
-    set_seed(opt.seed)
-
     exit(0)
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--data_dir", metavar="PATH")
+    parser.add_argument("--skip_test_prediction", action="store_true")
     parser.add_argument("--n_model_train_samples", type=int, default=-1)
+    parser.add_argument("--model", default="ead")
     parser.add_argument("--snapshot", default=None)
     parser.add_argument("--param_path", metavar="PATH")
     parser.add_argument("--out_dir", metavar="PATH", default="result")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--cv_dump", action="store_true")
     parser.add_argument("--cv_n_bagging", type=int, default=0)
+    parser.add_argument("--use_k_fold_models", action="store_true")
     parser.add_argument("--n_splits", type=int, default=3)
     parser.add_argument("--pre_post_process_tuning", action="store_true")
     parser.add_argument("--check_load_model", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
+    set_seed(args.seed)
+    os.makedirs(args.out_dir, exist_ok=True)
     cell_type_names = {
         "all": "all",
         "hsc": "HSC",
@@ -378,20 +381,13 @@ def main():
         "bp": "BP",
         "mop": "MoP",
     }
-    
+    data_dir = args.data_dir
     train_inputs, train_metadata, train_target = load_dataset(
-                                                        data_dir=opt.data_dir, 
-                                                        task_type=opt.task_type, 
-                                                        split="train", 
-                                                        cell_type=cell_type_names[opt.cell_type]
-                                                    )
-    test_inputs, test_metadata, _ = load_dataset(
-                                            data_dir=opt.data_dir, 
-                                            task_type=args.task_type, 
-                                            split="test"
-                                        )
+        data_dir=data_dir, task_type=args.task_type, split="train", cell_type=cell_type_names[args.cell_type]
+    )
+    test_inputs, test_metadata, _ = load_dataset(data_dir=data_dir, task_type=args.task_type, split="test")
 
-    if opt.model == "ead":
+    if args.model == "ead":
         model_class = EncoderDecoder
         pre_post_process_class = PrePostProcessing
     else:
@@ -494,47 +490,67 @@ def main():
     del cv
     gc.collect()
     if not args.skip_test_prediction:
-        print("train model to predict with test data", flush=True)
-        start_time = time.time()
-        pre_post_process = build_pre_post_process(params["pre_post_process"])
-        if not pre_post_process.is_fitting:
-            pre_post_process.fit_preprocess(inputs_values=train_inputs, targets_values=train_target, metadata=train_metadata)
+        if args.use_k_fold_models:
+            print("use k fold models for test preds")
+            start_time = time.time()
+            y_test_pred = None
+            print("pridict with test data", flush=True)
+            for _, (model, pre_post_process) in enumerate(zip(k_fold_models, k_fold_pre_post_processes)):
+                preprocessed_test_inputs, _ = pre_post_process.preprocess(
+                    inputs_values=test_inputs, targets_values=None, metadata=test_metadata
+                )
+                preprocessed_y_test_pred = model.predict(
+                    x=test_inputs, preprocessed_x=preprocessed_test_inputs, metadata=test_metadata
+                )
+                new_y_test_pred = pre_post_process.postprocess(preprocessed_y_test_pred)
+                if y_test_pred is None:
+                    y_test_pred = row_normalize(new_y_test_pred)
+                else:
+                    y_test_pred += row_normalize(new_y_test_pred)
+                y_test_pred /= len(k_fold_models)
+            print(f"elapsed time = {time.time() - start_time: .3f}")
         else:
-            print("skip pre_post_process fit")
-        preprocessed_inputs_values, preprocessed_targets_values = pre_post_process.preprocess(
-            inputs_values=train_inputs, targets_values=train_target, metadata=train_metadata
-        )
-        preprocessed_test_inputs, _ = pre_post_process.preprocess(
-            inputs_values=test_inputs, targets_values=None, metadata=test_metadata
-        )
-        model = build_model(params=params["model"])
-        model.fit(
-            x=train_inputs,
-            y=train_target,
-            preprocessed_x=preprocessed_inputs_values,
-            preprocessed_y=preprocessed_targets_values,
-            metadata=train_metadata,
-            pre_post_process=pre_post_process,
-        )
-        print(f"elapsed time = {time.time() - start_time: .3f}")
-        print("pridict with test data", flush=True)
-        start_time = time.time()
-        preprocessed_y_test_pred = model.predict(
-            x=test_inputs, preprocessed_x=preprocessed_test_inputs, metadata=test_metadata
-        )
-        y_test_pred = pre_post_process.postprocess(preprocessed_y_test_pred)
-        print(f"elapsed time = {time.time() - start_time: .3f}")
-        print("dump preprocess and model")
-        model_dir = os.path.join(args.out_dir, "model")
-        os.makedirs(model_dir, exist_ok=True)
-        with open(os.path.join(model_dir, "pre_post_process.pickle"), "wb") as f:
-            pickle.dump(pre_post_process, f)
-        model.save(model_dir)
-        if args.check_load_model:
-            with open(os.path.join(model_dir, "pre_post_process.pickle"), "rb") as f:
-                _ = pickle.load(f)
-            loaded_model = build_model(params=None)
-            loaded_model.load(model_dir)
+            print("train model to predict with test data", flush=True)
+            start_time = time.time()
+            pre_post_process = build_pre_post_process(params["pre_post_process"])
+            if not pre_post_process.is_fitting:
+                pre_post_process.fit_preprocess(inputs_values=train_inputs, targets_values=train_target, metadata=train_metadata)
+            else:
+                print("skip pre_post_process fit")
+            preprocessed_inputs_values, preprocessed_targets_values = pre_post_process.preprocess(
+                inputs_values=train_inputs, targets_values=train_target, metadata=train_metadata
+            )
+            preprocessed_test_inputs, _ = pre_post_process.preprocess(
+                inputs_values=test_inputs, targets_values=None, metadata=test_metadata
+            )
+            model = build_model(params=params["model"])
+            model.fit(
+                x=train_inputs,
+                y=train_target,
+                preprocessed_x=preprocessed_inputs_values,
+                preprocessed_y=preprocessed_targets_values,
+                metadata=train_metadata,
+                pre_post_process=pre_post_process,
+            )
+            print(f"elapsed time = {time.time() - start_time: .3f}")
+            print("pridict with test data", flush=True)
+            start_time = time.time()
+            preprocessed_y_test_pred = model.predict(
+                x=test_inputs, preprocessed_x=preprocessed_test_inputs, metadata=test_metadata
+            )
+            y_test_pred = pre_post_process.postprocess(preprocessed_y_test_pred)
+            print(f"elapsed time = {time.time() - start_time: .3f}")
+            print("dump preprocess and model")
+            model_dir = os.path.join(args.out_dir, "model")
+            os.makedirs(model_dir, exist_ok=True)
+            with open(os.path.join(model_dir, "pre_post_process.pickle"), "wb") as f:
+                pickle.dump(pre_post_process, f)
+            model.save(model_dir)
+            if args.check_load_model:
+                with open(os.path.join(model_dir, "pre_post_process.pickle"), "rb") as f:
+                    _ = pickle.load(f)
+                loaded_model = build_model(params=None)
+                loaded_model.load(model_dir)
         if args.cell_type != "all":
             s = test_metadata["cell_type"] == cell_type_names[args.cell_type]
             y_test_pred[~s] = np.nan

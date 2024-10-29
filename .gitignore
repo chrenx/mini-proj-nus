@@ -1,5 +1,9 @@
 __pycache__/
 
 data/*
+related_work/*
+
+
 !data/.gitkeep
 !data/custom_dataset.py
+

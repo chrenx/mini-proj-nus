@@ -1,3 +1,59 @@
+Multimodal Single-Cell Integration Across Time, Individuals, and Batches
+
+
 Goal:
 predict how DNA, RNA, & protein measurements co-vary in single cells
+
+Pearson correlation coefficient to rank submissions
+
+Multiome data set:
+    given chromatin accessibility, predict gene expression.
+    the correlation between the ground-truth gene expressions and the predicted gene expressions
+
+CITEseq data set:
+    given gene expression, predict protein levels.
+    the correlation between ground-truth surface protein levels and predicted surface protein levels
+
+The overall score is the average of each sample's correlation score
+
+
+metadata:
+    metadata shape:  (281528, 5)
+    281528 unique cell: 
+    5 unique day: [ 2  3  4  7 10]
+    4 unique donors: [27678 32606 13176 31800]
+    8 unique cell_type: ['HSC' 'EryP' 'NeuP' 'MasP' 'MkP' 'BP' 'MoP' 'hidden']
+    2 unique technology: ['citeseq' 'multiome']
+    The metadata table has no missing values.
+
+    Insight:
+        Every cell is used only on a single day and then discarded.
+        There are no time series over single cells.
+        The two technologies do not share cells. 
+        It looks like we may create two completely independent models, one per technology, even if they share the same four donors. It's two Kaggle competitions in one!
+        As the models are independent, it is a good idea to work with two separate notebooks, one for CITEseq, the other one for Multiome.
+        Donor and cell_type are categorical features, which can be one-hot encoded.
+
+citeseq train input:
+    Shape: (70988, 22050)
+    Missing values: 0
+    Genes which never occur in train: 449
+    Zero entries in train: 78%
+
+    sparse!
+
+citeseq test input:
+    Shape of CITEseq test: (48663, 22050)
+    Missing values: 0
+    Genes which never occur in test:  745
+    Zero entries in test:  78%
+
+
+Multiome:
+    train inputs: 105942 * 228942 float32 values (97 GByte)
+    train targets: 105942 * 23418 float32 values (10 GByte)
+    test inputs: 55935 * 228942 float32 values (13 GByte)
+
+
+
 

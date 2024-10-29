@@ -1,0 +1,25 @@
+---
+# project information ------------------------------------------------------------------------------
+exp_name: "unet_arch"
+description: null                # important notes (str)
+save_dir: null                   # save important files, weights, etc., will be intialized if null
+wandb_pj_name: "nus-mini-proj"
+wandb_entity: "chrenx"           # wandb account
+disable_wandb: true
+seed: 42                         # int
+
+# data ---------------------------------------------------------------------------------------------
+data_dir: "data/suzuki_data"
+
+# GPU ----------------------------------------------------------------------------------------------
+cuda_id: "9"
+
+# training -----------------------------------------------------------------------------------------
+save_best_model: true
+skip_test_prediction: false      # store_true
+task_type: "multi"               # choices=["multi","cite"]
+cell_type: "all"                 # choices=["all","hsc","eryp","neup","masp","mkp","bp","mop"]
+model: "ead"
+
+
+

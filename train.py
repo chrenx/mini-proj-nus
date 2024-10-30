@@ -5,12 +5,9 @@ import numpy as np
 import optuna
 import pandas as pd
 from sklearn.linear_model import Ridge
-from sklearn.metrics import mean_squared_error
 
-from utils.suzuki.metric.correlation_score import correlation_score
 from utils.suzuki.model.encoder_decoder.encoder_decoder import EncoderDecoder
 from utils.suzuki.pre_post_processing.pre_post_processing import PrePostProcessing
-from utils.suzuki.utility.get_selector_with_metadata_pattern import get_selector_with_metadata_pattern
 from utils import *
 
 os.environ['TZ'] = 'America/New_York'
@@ -24,11 +21,22 @@ def main():
     create_dirs_save_files(opt)
     set_seed(opt.seed)
     set_redirect_printing(opt)
+
+    if opt.model == "ead":
+        model_class = EncoderDecoder
+        pre_post_process_class = PrePostProcessing
+    else:
+        raise ValueError
+
+    params = get_params_core(model_class=model_class, 
+                             pre_post_process_class=pre_post_process_class,
+                             opt=opt)
     
     #! for debug ===================================================================================
     if opt.debug:
         print("\n==================================== DEBUGING mode ...")
-        print("using short data:", opt.use_short_data, "\n")
+    if opt.debug: #! 届时去掉
+        print("using short data")
         if opt.task_type == "multi":
             import scipy.sparse
             train_inputs = scipy.sparse.load_npz("data/fast/train_multi_inputs_values.sparse.npz")
@@ -52,30 +60,16 @@ def main():
         test_inputs, test_metadata, _ = load_data(data_dir=opt.data_dir, 
                                                 task_type=opt.task_type, 
                                                 split="test")
-
-    if opt.model == "ead":
-        model_class = EncoderDecoder
-        pre_post_process_class = PrePostProcessing
-    else:
-        raise ValueError
-
-    params = get_params_core(model_class=model_class, 
-                             pre_post_process_class=pre_post_process_class,
-                             opt=opt)
     
     pre_post_process_default = pre_post_process_class(params["pre_post_process"])
     
     #! DEBUG =======================================================================================
-    if opt.debug and not opt.use_short_data: #! 届时去掉
-        in_dcmp = joblib.load(f'data/fast_preprocess/{opt.task_type}_targets_decomposer.joblib')
-        tar_dcmp = joblib.load(f'data/fast_preprocess/{opt.task_type}_targets_decomposer.joblib')
-        tar_glb_med = np.load(f'data/fast_preprocess/{opt.task_type}_targets_global_median.npy')
-        pre_post_process_default.preprocesses['targets_global_median'] = tar_glb_med
-        pre_post_process_default.preprocesses['targets_decomposer'] = tar_dcmp
-        pre_post_process_default.preprocesses['inputs_decomposer'] = in_dcmp
+    if opt.fast_process_exist and not opt.debug:
+        pre_post_process_default = load_pre_post_process_instance(opt)
     #! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     else:
         #! This takes long time
+        # pass
         print(f"start fit_preprocess {opt.task_type} ...")
         pre_post_process_default.fit_preprocess(
             inputs_values=train_inputs,
@@ -84,8 +78,9 @@ def main():
             test_inputs_values=test_inputs,
             test_metadata=test_metadata,
         )
-        print("save preprocesses ...")
-        save_pre_post_process_default(pre_post_process_default.preprocesses, opt)
+    
+        if not opt.debug:
+            save_pre_post_process_class_instance(pre_post_process_default, opt)
 
     #! DEBUG =======================================================================================
     # print("-----------keys")
@@ -105,44 +100,60 @@ def main():
     print("test inputs shape   : ", test_inputs.shape)
     print("test metadata shape : ", test_metadata.shape, "\n")
 
+    # cv = CrossValidation()
+    # result_df, k_fold_models, k_fold_pre_post_processes = cv.compute_score(
+    #     x=train_inputs,
+    #     y=train_target,
+    #     metadata=train_metadata,
+    #     x_test=test_inputs,
+    #     metadata_test=test_metadata,
+    #     build_model=build_model,
+    #     build_pre_post_process=build_pre_post_process,
+    #     params=params,
+    #     n_splits=3,
+    #     dump=False,
+    #     dump_dir=opt.save_dir,
+    #     n_bagging=0,
+    #     model_class=model_class,
+    #     pre_post_process_class=pre_post_process_class,
+    # )
+    # print("Average:", result_df.mean(), flush=True)
+    # del cv
+    # gc.collect()
 
-    cv = CrossValidation()
-
-    print("一切顺利")
-    exit(0)
-    result_df, k_fold_models, k_fold_pre_post_processes = cv.compute_score(
-        x=train_inputs,
-        y=train_target,
-        metadata=train_metadata,
-        x_test=test_inputs,
-        metadata_test=test_metadata,
-        build_model=build_model,
-        build_pre_post_process=build_pre_post_process,
-        params=params,
-        n_splits=3,
-        dump=False,
-        dump_dir=opt.save_dir,
-        n_bagging=0,
-    )
-    print("Average:", result_df.mean(), flush=True)
-    del cv
-    gc.collect()
-
-    # if not args.skip_test_prediction:
     print("train model to predict with test data", flush=True)
     start_time = time.time()
-    pre_post_process = build_pre_post_process(params["pre_post_process"])
+    # pre_post_process = build_pre_post_process(pre_post_process_class=pre_post_process_class, 
+    #                                           params=params["pre_post_process"])
+    pre_post_process = pre_post_process_default
     if not pre_post_process.is_fitting:
-        pre_post_process.fit_preprocess(inputs_values=train_inputs, targets_values=train_target, metadata=train_metadata)
+        pre_post_process.fit_preprocess(inputs_values=train_inputs, 
+                                        targets_values=train_target, 
+                                        metadata=train_metadata)
     else:
         print("skip pre_post_process fit")
+
     preprocessed_inputs_values, preprocessed_targets_values = pre_post_process.preprocess(
         inputs_values=train_inputs, targets_values=train_target, metadata=train_metadata
     )
     preprocessed_test_inputs, _ = pre_post_process.preprocess(
         inputs_values=test_inputs, targets_values=None, metadata=test_metadata
     )
+
+    print("preprocessed_inputs_values:", preprocessed_inputs_values.shape)
+    print(preprocessed_inputs_values)
+    print("preprocessed_targets_values:", preprocessed_targets_values.shape)
+    print(preprocessed_targets_values)
+    print("preprocessed_test_inputs:", preprocessed_test_inputs.shape)
+    print(preprocessed_test_inputs)
+
+    print("一切顺利")
+    exit(0)
+
     model = build_model(params=params["model"])
+
+    print("一切顺利")
+    exit(0)
     
     model.fit(
         x=train_inputs,

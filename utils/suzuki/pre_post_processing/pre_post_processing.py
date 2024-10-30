@@ -267,7 +267,7 @@ class PrePostProcessing(object):
         return transformed_inputs_values, transformed_targets_values
 
     def fit_preprocess(self, inputs_values, targets_values, metadata, test_inputs_values, test_metadata):
-        self._preprocess(
+        tmpx, tmpy = self._preprocess(
             inputs_values=inputs_values,
             targets_values=targets_values,
             metadata=metadata,
@@ -275,6 +275,11 @@ class PrePostProcessing(object):
             test_metadata=test_metadata,
             fitting=True,
         )
+        print("........... tmpx:", tmpx.shape)
+        print(tmpx)
+        print("........... tmpy:", tmpy.shape)
+        print(tmpy)
+        
         self.is_fitting = True
         return self
 

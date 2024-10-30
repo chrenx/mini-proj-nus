@@ -17,3 +17,4 @@ def correlation_score(y_true, y_pred):
     for i in range(len(y_true)):
         corr_sum += np.corrcoef(y_true[i], y_pred[i])[1, 0]
     return corr_sum / len(y_true)
+

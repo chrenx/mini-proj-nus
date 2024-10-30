@@ -7,7 +7,7 @@ wandb_pj_name: "nus-mini-proj"
 wandb_entity: "chrenx"           # wandb account
 disable_wandb: true
 seed: 42                         # int
-debug: true
+debug: false
 
 # data ---------------------------------------------------------------------------------------------
 data_dir: "data/suzuki_data"
@@ -43,5 +43,4 @@ norm: "layer_norm"
 activation: "gelu"
 skip: false
 
-
-use_short_data: true    # if not debug, must be false
+fast_process_exist: false

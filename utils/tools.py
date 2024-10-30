@@ -1,13 +1,15 @@
-import argparse, gc, importlib, joblib, logging, os, random, shutil, sys, time, yaml
+import argparse, gc, importlib, joblib, logging, os, pickle, random, shutil, sys, time, yaml
 from datetime import datetime
 
 import scipy.sparse, torch
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import GroupKFold, KFold, ShuffleSplit
 
-from utils.suzuki.pre_post_processing.pre_post_processing import PrePostProcessing
+from utils.suzuki.metric.correlation_score import correlation_score
+from utils.suzuki.utility.get_selector_with_metadata_pattern import get_selector_with_metadata_pattern
 
 
 #!#################################### Template ####################################################
@@ -179,25 +181,13 @@ class ModelLoader:
         assert self.model is not None, "Error when loading model"
 
 #!#################################### Proj specific ###############################################
-def _build_model_default(params):
-    model = Ridge(**params)
-    return model
-
-def _build_pre_post_process_default(params):
-    pre_post_process = PrePostProcessing(params)
-    return pre_post_process
-
-def _get_params_default(trial):
-    params = {}
-    return params
-
 def build_model(model_class, params):
         model = model_class(params)
         return model
 
 def build_pre_post_process(pre_post_process_class, params):
-        pre_post_process = pre_post_process_class(params)
-        return pre_post_process
+    pre_post_process = pre_post_process_class(params)
+    return pre_post_process
 
 def get_params_core(model_class, pre_post_process_class, opt):
         model_params = model_class.get_params(opt)
@@ -293,16 +283,19 @@ def load_data(data_dir, task_type, cell_type="all", split="train"):
         metadata_df = metadata_df[s]
     return train_inputs, metadata_df, train_target
 
-def save_pre_post_process_default(preprocesses, opt):
+def load_pre_post_process_instance(opt):
+    print("load pre_post_process_class instance ...")
+    with open(f"data/fast_preprocess/{opt.task_type}_whole_preprocess_obj.pickle", 'rb') as f:
+        class_instance = pickle.load(f)
+    return class_instance
+
+def save_pre_post_process_class_instance(pre_post_process, opt):
+    if opt.fast_process_exist:
+        return
+    print("save preprocesses ...")
     os.makedirs("data/fast_preprocess", exist_ok=True)
-    np.save(f"data/fast_preprocess/{opt.task_type}_targets_global_median.npy", 
-            preprocesses['targets_global_median'])
-    # print("preprocesses['targets_decomposer']: ")
-    # print(preprocesses['targets_decomposer'])
-    joblib.dump(preprocesses['targets_decomposer'], 
-                f"data/fast_preprocess/{opt.task_type}_targets_decomposer.joblib")
-    joblib.dump(preprocesses['inputs_decomposer'], 
-                f"data/fast_preprocess/{opt.task_type}_inputs_decomposer.joblib")
+    with open(f"data/fast_preprocess/{opt.task_type}_whole_preprocess_obj.pickle", "wb") as f:
+        pickle.dump(pre_post_process, f)
 
 #*--------------------------------------------------------------------------------------------------
 
@@ -318,14 +311,16 @@ class CrossValidation(object):
         x_test,
         metadata_test,
         params,
-        build_model=_build_model_default,
-        build_pre_post_process=_build_pre_post_process_default,
+        build_model=build_model,
+        build_pre_post_process=build_pre_post_process,
         dump=False,
         dump_dir="./",
         n_splits=3,
         n_bagging=0,
         bagging_ratio=1.0,
         use_batch_group=True,
+        model_class=None,
+        pre_post_process_class=None,
     ):
         groups = None
         kf = KFold(n_splits=n_splits, shuffle=True, random_state=1)
@@ -382,6 +377,7 @@ class CrossValidation(object):
             for bagging_i in range(_n_bagging):
                 gc.collect()
                 if n_bagging > 0:
+                    raise "有问题"
                     print("bagging_i", bagging_i, flush=True)
                     n_bagging_size = int(x_train.shape[0] * bagging_ratio)
                     bagging_idx = np.random.permutation(x_train.shape[0])[:n_bagging_size]
@@ -393,12 +389,16 @@ class CrossValidation(object):
                     y_train_bagging = y_train
                     metadata_train_bagging = metadata_train
 
-                pre_post_process = build_pre_post_process(params=params["pre_post_process"])
+
+                pre_post_process = build_pre_post_process(pre_post_process_class,
+                                                          params=params["pre_post_process"])
                 if not pre_post_process.is_fitting:
                     pre_post_process.fit_preprocess(
                         inputs_values=x_train_bagging,
                         targets_values=y_train_bagging,
                         metadata=metadata_train_bagging,
+                        test_inputs_values=x_val,
+                        test_metadata=metadata_val
                     )
                 else:
                     print("skip pre_post_process fit")
@@ -408,8 +408,12 @@ class CrossValidation(object):
                     targets_values=y_train_bagging,
                     metadata=metadata_train_bagging,
                 )
-                model = build_model(params=params["model"])
+                model = build_model(model_class=model_class, params=params["model"])
+                # print("[]][][][][][]")
+                # print(type(preprocessed_x_train))
+                # print(type(preprocessed_y_train))
                 print(f"model input shape X:{preprocessed_x_train.shape} Y:{preprocessed_y_train.shape}")
+
                 model.fit(
                     x=x_train_bagging,
                     y=y_train_bagging,
@@ -497,70 +501,3 @@ class CrossValidation(object):
         # Show overall score
         result_df = pd.DataFrame(scores_dict)
         return result_df, models, pre_post_processes
-
-class Objective(object):
-    def __init__(
-        self,
-        x,
-        y,
-        metadata,
-        x_test,
-        metadata_test,
-        test_ratio=0.2,
-        get_params=_get_params_default,
-        build_model=_build_model_default,
-        build_pre_post_process=_build_pre_post_process_default,
-    ):
-        self.test_ratio = test_ratio
-        splitter = ShuffleSplit(n_splits=1, test_size=test_ratio, random_state=42)
-        train_index, val_index = next(splitter.split(x))
-
-        self.x_train = x[train_index, :]
-        self.x_val = x[val_index, :]
-        self.y_train = y[train_index, :]
-        self.y_val = y[val_index, :].toarray()
-        self.metadata_train = metadata.iloc[train_index, :]
-        self.metadata_val = metadata.iloc[val_index, :]
-        self.get_params = get_params
-        self.build_model = build_model
-        self.build_pre_post_process = build_pre_post_process
-
-    def __call__(self, trial):
-        gc.collect()
-        params = self.get_params(trial=trial)
-        pre_post_process = self.build_pre_post_process(params=params["pre_post_process"])
-        model = self.build_model(params=params["model"])
-        if not pre_post_process.is_fitting:
-            pre_post_process.fit_preprocess(inputs_values=self.x_train, targets_values=self.y_train)
-        else:
-            print("skip pre_post_process fit")
-        preprocessed_inputs_values, preprocessed_targets_values = pre_post_process.preprocess(
-            inputs_values=self.x_train,
-            targets_values=self.y_train,
-            metadata=self.metadata_train,
-        )
-
-        print(f"model input shape X:{preprocessed_inputs_values.shape} Y:{preprocessed_targets_values.shape}")
-        model.fit(
-            preprocessed_x=preprocessed_inputs_values,
-            preprocessed_y=preprocessed_targets_values,
-            x=self.x_train,
-            y=self.y_train,
-            metadata=self.metadata_train,
-            pre_post_process=pre_post_process,
-        )
-        preprocessed_inputs_values, _ = pre_post_process.preprocess(
-            inputs_values=self.x_val,
-            targets_values=None,
-            metadata=self.metadata_val,
-        )
-        preprocessed_y_pred_val = model.predict(
-            preprocessed_x=preprocessed_inputs_values, x=self.x_val, metadata=self.metadata_val
-        )
-        y_val_pred = pre_post_process.postprocess(preprocessed_y_pred_val)
-        # print("y_test_pred", y_test_pred)
-        corrscore = correlation_score(self.y_val, y_val_pred)
-
-        return corrscore
-
-

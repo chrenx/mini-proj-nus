@@ -5,5 +5,8 @@ related_work/*
 runs/*
 
 !data/.gitkeep
-!data/custom_dataset.py
+!data/short/.gitkeep
+!data/orig_data/.gitkeep
+!data/fast_load_orig_data/.gitkeep
+!data/fast_preprocess/.gitkeep
 

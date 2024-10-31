@@ -37,18 +37,18 @@ def main():
         print("using short data")
         if opt.task_type == "multi":
             import scipy.sparse
-            train_inputs = scipy.sparse.load_npz("data/fast/train_multi_inputs_values.sparse.npz")
-            train_metadata = pd.read_parquet("data/fast/train_multi_metadata.parquet")
-            train_target = scipy.sparse.load_npz("data/fast/train_multi_targets_values.sparse.npz")
-            test_inputs = scipy.sparse.load_npz("data/fast/test_multi_inputs_values.sparse.npz")
-            test_metadata = pd.read_parquet("data/fast/test_multi_metadata.parquet")
+            train_inputs = scipy.sparse.load_npz("data/short/train_multi_inputs_values.sparse.npz")
+            train_metadata = pd.read_parquet("data/short/train_multi_metadata.parquet")
+            train_target = scipy.sparse.load_npz("data/short/train_multi_targets_values.sparse.npz")
+            test_inputs = scipy.sparse.load_npz("data/short/test_multi_inputs_values.sparse.npz")
+            test_metadata = pd.read_parquet("data/short/test_multi_metadata.parquet")
         elif opt.task_type == "cite":
             import scipy.sparse
-            train_inputs = scipy.sparse.load_npz("data/fast/train_cite_inputs_values.sparse.npz")
-            train_metadata = pd.read_parquet("data/fast/train_cite_metadata.parquet")
-            train_target = scipy.sparse.load_npz("data/fast/train_cite_targets_values.sparse.npz")
-            test_inputs = scipy.sparse.load_npz("data/fast/test_cite_inputs_values.sparse.npz")
-            test_metadata = pd.read_parquet("data/fast/test_cite_metadata.parquet")
+            train_inputs = scipy.sparse.load_npz("data/short/train_cite_inputs_values.sparse.npz")
+            train_metadata = pd.read_parquet("data/short/train_cite_metadata.parquet")
+            train_target = scipy.sparse.load_npz("data/short/train_cite_targets_values.sparse.npz")
+            test_inputs = scipy.sparse.load_npz("data/short/test_cite_inputs_values.sparse.npz")
+            test_metadata = pd.read_parquet("data/short/test_cite_metadata.parquet")
     #! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     else:
         train_inputs, train_metadata, train_target = load_data(data_dir=opt.data_dir, 

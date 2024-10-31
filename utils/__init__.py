@@ -21,5 +21,6 @@ __all__ = [
     "load_pre_post_process_instance",
     "save_processed_inputs_targets",
     "save_pre_post_process_class_instance",
+    "split_dataset_save_load_idx",
     "CrossValidation",
 ]

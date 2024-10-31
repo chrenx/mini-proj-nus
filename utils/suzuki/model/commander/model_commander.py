@@ -7,13 +7,14 @@ import time
 import numpy as np
 import torch, wandb
 
+from utils import split_dataset_save_load_idx
 from utils.suzuki.model.commander.cite_encoder_decoder_module import CiteEncoderDecoderModule
 from utils.suzuki.model.commander.mlp_module import HierarchicalMLPBModule, MLPBModule
 from utils.suzuki.model.commander.multi_encoder_decoder_module import MultiEncoderDecoderModule
 from utils.suzuki.model.torch_dataset.citeseq_dataset import CITEseqDataset
 from utils.suzuki.model.torch_dataset.multiome_dataset import MultiomeDataset
 from utils.suzuki.model.torch_helper.set_weight_decay import set_weight_decay
-from utils.suzuki.utility.summeary_torch_model_parameters import summeary_torch_model_parameters
+# from utils.suzuki.utility.summeary_torch_model_parameters import summeary_torch_model_parameters
 
 
 class ModelCommander(object):
@@ -168,10 +169,13 @@ class ModelCommander(object):
         self.inputs_info["y_dim"] = preprocessed_y.shape[1]
 
         dataset = self._build_dataset(
-            x=x, preprocessed_x=preprocessed_x, metadata=metadata, y=y, preprocessed_y=preprocessed_y, eval=False
+            x=x, preprocessed_x=preprocessed_x, metadata=metadata, 
+            y=y, preprocessed_y=preprocessed_y, eval=False
         )
         print("dataset size", len(dataset))
         assert len(dataset) > 0
+
+        train_idx, val_idx, test_idx = split_dataset_save_load_idx(dataset, self.opt)
 
         self.inputs_info["inputs_decomposer_components"] = pre_post_process.preprocesses["inputs_decomposer"].components_
         self.inputs_info["targets_decomposer_components"] = pre_post_process.preprocesses["targets_decomposer"].components_
@@ -200,7 +204,7 @@ class ModelCommander(object):
 
         self.model.to(device=self.params["device"])
 
-        #! 很奇怪 -----------------------------------------------------------------------------------
+        #! 为了一些var的初始化？ ----------------------------------------------------------------------
         dummy_batch = next(iter(data_loader))
         dummy_batch = self._batch_to_device(dummy_batch)
         self._train_step_forward(dummy_batch, 1.0)
@@ -289,7 +293,8 @@ class ModelCommander(object):
                 loss_corr = losses["loss_corr"]
                 loss_mae = losses["loss_mae"]
                 print(
-                    f"epoch: {epoch} total time: {end_time - start_time:.1f}, epoch time: {end_time - epoch_start_time:.1f}, loss:{loss: .3f} "
+                    f"epoch: {epoch} total time: {end_time - start_time:.1f}, epoch time: "
+                    f"{end_time - epoch_start_time:.1f}, loss:{loss: .3f} "
                     f"loss_corr:{loss_corr: .3f} "
                     f"loss_mse:{loss_mae: .3f} ",
                     flush=True,

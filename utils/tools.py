@@ -316,22 +316,58 @@ def save_processed_inputs_targets(preprocessed_inputs_values, preprocessed_targe
                                   preprocessed_test_inputs, opt):
     if opt.fast_process_exist_2:
         return
+    
+    train_input_path = f"data/fast_preprocess/{opt.task_type}_preprocessed_inputs_values.pickle"
+    target_path = f"data/fast_preprocess/{opt.task_type}_preprocessed_targets_values.pickle"
+    test_input_path = f"data/fast_preprocess/{opt.task_type}_preprocessed_test_inputs.pickle"
+
+    if os.path.exists(train_input_path) and os.path.exists(target_path) and \
+       os.path.exists(test_input_path):
+        return
+
     print("save processed_inputs_targets ...")
     os.makedirs("data/fast_preprocess", exist_ok=True)
-    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_inputs_values.pickle", 'wb') as f:
+    with open(train_input_path, 'wb') as f:
         pickle.dump(preprocessed_inputs_values, f)
-    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_targets_values.pickle", 'wb') as f:
+    with open(target_path, 'wb') as f:
         pickle.dump(preprocessed_targets_values, f)
-    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_test_inputs.pickle", 'wb') as f:
+    with open(test_input_path, 'wb') as f:
         pickle.dump(preprocessed_test_inputs, f)
 
 def save_pre_post_process_class_instance(pre_post_process, opt):
     if opt.fast_process_exist_1:
         return
+    class_instance_path = f"data/fast_preprocess/{opt.task_type}_whole_preprocess_obj.pickle"
+    if os.path.exists(class_instance_path):
+        return
     print("save preprocesses ...")
     os.makedirs("data/fast_preprocess", exist_ok=True)
-    with open(f"data/fast_preprocess/{opt.task_type}_whole_preprocess_obj.pickle", "wb") as f:
+    with open(class_instance_path, "wb") as f:
         pickle.dump(pre_post_process, f)
+
+def split_dataset_save_load_idx(dataset, opt):
+    train_idx_path = f"data/train_dataloader_idx_{opt.task_type}.npy"
+    val_idx_path = f"data/val_dataloader_idx_{opt.task_type}.npy"
+    test_idx_path = f"data/test_dataloader_idx_{opt.task_type}.npy"
+
+    if os.path.exists(train_idx_path) and os.path.exists(val_idx_path) and \
+       os.path.exists(test_idx_path):
+        train_idx = np.load('train_indices.npy').tolist()
+        val_idx = np.load('val_indices.npy').tolist()
+        test_idx = np.load('test_indices.npy').tolist()
+        return
+    
+    dataset_size = len(dataset)
+    train_size = int(dataset_size * 0.8)
+    val_size = int(dataset_size * 0.1)
+    indices = torch.randperm(dataset_size).tolist()
+    train_idx = indices[:train_size]
+    val_idx = indices[train_size:train_size + val_size]
+    test_idx = indices[train_size + val_size:]
+    np.save(train_idx_path, train_idx)
+    np.save(val_idx_path, val_idx)
+    np.save(test_idx_path, test_idx)
+    return train_idx, val_idx, test_idx
 
 #*--------------------------------------------------------------------------------------------------
 

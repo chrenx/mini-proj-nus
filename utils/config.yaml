@@ -1,7 +1,7 @@
 ---
 # project information ------------------------------------------------------------------------------
 exp_name: "suzuki-arch"
-description: "original suzuki's working training"                # important notes (str)
+description: "no dummy batch"                # important notes (str)
 save_dir: null                   # save important files, weights, etc., will be intialized if null
 wandb_pj_name: "nus-mini-proj"
 wandb_entity: "chrenx"           # wandb account

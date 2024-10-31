@@ -1,7 +1,7 @@
 from torch import nn
 
-from utils.suzuki.model.encoder_decoder.cite_encoder_decoder_module import CiteEncoderDecoderModule
-from utils.suzuki.model.encoder_decoder.multi_encoder_decoder_module import MultiEncoderDecoderModule
+from utils.suzuki.model.commander.cite_encoder_decoder_module import CiteEncoderDecoderModule
+from utils.suzuki.model.commander.multi_encoder_decoder_module import MultiEncoderDecoderModule
 
 
 def set_weight_decay(module, weight_decay):

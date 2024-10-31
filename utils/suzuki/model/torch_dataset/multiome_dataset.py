@@ -20,8 +20,10 @@ class MultiomeDataset(torch.utils.data.Dataset):
     """TensorDataset with support of transforms."""
 
     def __init__(
-        self, inputs_values, preprocessed_inputs_values, metadata, targets_values, preprocessed_targets_values, selected_metadata
+        self, inputs_values, preprocessed_inputs_values, metadata, 
+              targets_values, preprocessed_targets_values, selected_metadata
     ):
+        # selected_metadata 是none
         # assert isinstance(inputs_values, scipy.sparse.csr_matrix)
         if selected_metadata is not None:
             selector = get_selector_with_metadata_pattern(metadata=metadata, metadata_pattern=selected_metadata)
@@ -61,7 +63,8 @@ class MultiomeDataset(torch.utils.data.Dataset):
             preprocessed_inputs_values = self.preprocessed_inputs_values[index].ravel()
         preprocessed_inputs_tensor = torch.as_tensor(preprocessed_inputs_values, dtype=torch.float32)
         gender_id = torch.as_tensor(self.gender_ids[index], dtype=torch.int64)
-        info = torch.as_tensor(self.metadata.iloc[index, :][self.metadata_keys].values.astype(float), dtype=torch.float32)
+        info = torch.as_tensor(self.metadata.iloc[index, :][self.metadata_keys].values.astype(float), 
+                               dtype=torch.float32)
         if self.targets_values is not None:
             if isinstance(self.targets_values, scipy.sparse.csr_matrix):
                 targets_values = self.targets_values[index].toarray().ravel()
@@ -70,6 +73,11 @@ class MultiomeDataset(torch.utils.data.Dataset):
             preprocessed_targets_values = self.preprocessed_targets_values[index].ravel()
             targets_tensor = torch.as_tensor(targets_values, dtype=torch.float32)
             preprocessed_targets_tensor = torch.as_tensor(preprocessed_targets_values, dtype=torch.float32)
+            # print("preprocessed_inputs_tensor :", preprocessed_inputs_tensor.shape)  # 256
+            # print("gender_id                  :", gender_id)                         # 1或0
+            # print("info                       :", info.shape)                        # 7
+            # print("targets_tensor             :", targets_tensor.shape)              # 23418
+            # print("preprocessed_targets_tensor:", preprocessed_targets_tensor.shape) # 128
             return [preprocessed_inputs_tensor, gender_id, info, targets_tensor, preprocessed_targets_tensor]
         else:
             return [

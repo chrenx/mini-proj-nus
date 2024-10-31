@@ -17,7 +17,9 @@ __all__ = [
     "get_group_id",
     "get_params_core",
     "load_data",
+    "load_processed_inputs_targets",
     "load_pre_post_process_instance",
+    "save_processed_inputs_targets",
     "save_pre_post_process_class_instance",
     "CrossValidation",
 ]

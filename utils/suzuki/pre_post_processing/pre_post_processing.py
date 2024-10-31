@@ -275,11 +275,11 @@ class PrePostProcessing(object):
             test_metadata=test_metadata,
             fitting=True,
         )
-        print("........... tmpx:", tmpx.shape)
-        print(tmpx)
-        print("........... tmpy:", tmpy.shape)
-        print(tmpy)
-        
+        # print("........... tmpx:", tmpx.shape)
+        # print(tmpx)
+        # print("........... tmpy:", tmpy.shape)
+        # print(tmpy)
+
         self.is_fitting = True
         return self
 

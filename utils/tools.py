@@ -75,7 +75,6 @@ def parse_opt():
     parser.add_argument('--epoch', type=int, help='num of epoch')
     parser.add_argument('--lr', type=float, help='learning rate')
 
-
     # ==============================================================================================
 
     args = vars(parser.parse_args())
@@ -86,6 +85,7 @@ def parse_opt():
         opt = DotDict(opt)
         for arg in cli_args: # update arguments if passed from command line; otherwise, use default
             opt[arg] = args[arg]
+    opt.exp_name = opt.exp_name + '_' + opt.task_type
 
     cur_time = get_cur_time()
     opt.cur_time = cur_time
@@ -95,6 +95,19 @@ def parse_opt():
     opt.codes_dir = os.path.join(opt.save_dir, 'codes')
     opt.device_info = torch.cuda.get_device_name(int(opt.cuda_id)) 
     opt.device = f"cuda:{opt.cuda_id}"
+
+    if not opt.debug:
+        if os.path.exists(f"data/fast_preprocess/{opt.task_type}_whole_preprocess_obj.pickle"):
+            opt.fast_process_exist_1 = True
+        else:
+            opt.fast_process_exist_1 = False
+        a=os.path.exists(f"data/fast_preprocess/{opt.task_type}_preprocessed_inputs_values.pickle")
+        b=os.path.exists(f"data/fast_preprocess/{opt.task_type}_preprocessed_targets_values.pickle")
+        c=os.path.exists(f"data/fast_preprocess/{opt.task_type}_preprocessed_test_inputs.pickle")
+        if a and b and c:
+            opt.fast_process_exist_2 = True
+        else:
+            opt.fast_process_exist_2 = False
 
     return opt
 
@@ -182,8 +195,8 @@ class ModelLoader:
 
 #!#################################### Proj specific ###############################################
 def build_model(model_class, params):
-        model = model_class(params)
-        return model
+    model = model_class(params)
+    return model
 
 def build_pre_post_process(pre_post_process_class, params):
     pre_post_process = pre_post_process_class(params)
@@ -283,14 +296,37 @@ def load_data(data_dir, task_type, cell_type="all", split="train"):
         metadata_df = metadata_df[s]
     return train_inputs, metadata_df, train_target
 
+def load_processed_inputs_targets(opt):
+    print("load processed_inputs_targets instance ...")
+    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_inputs_values.pickle", 'rb') as f:
+        preprocessed_inputs_values = pickle.load(f)
+    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_targets_values.pickle", 'rb') as f:
+        preprocessed_targets_values = pickle.load(f)
+    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_test_inputs.pickle", 'rb') as f:
+        preprocessed_test_inputs = pickle.load(f)
+    return preprocessed_inputs_values, preprocessed_targets_values, preprocessed_test_inputs
+
 def load_pre_post_process_instance(opt):
     print("load pre_post_process_class instance ...")
     with open(f"data/fast_preprocess/{opt.task_type}_whole_preprocess_obj.pickle", 'rb') as f:
         class_instance = pickle.load(f)
     return class_instance
 
+def save_processed_inputs_targets(preprocessed_inputs_values, preprocessed_targets_values, 
+                                  preprocessed_test_inputs, opt):
+    if opt.fast_process_exist_2:
+        return
+    print("save processed_inputs_targets ...")
+    os.makedirs("data/fast_preprocess", exist_ok=True)
+    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_inputs_values.pickle", 'wb') as f:
+        pickle.dump(preprocessed_inputs_values, f)
+    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_targets_values.pickle", 'wb') as f:
+        pickle.dump(preprocessed_targets_values, f)
+    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_test_inputs.pickle", 'wb') as f:
+        pickle.dump(preprocessed_test_inputs, f)
+
 def save_pre_post_process_class_instance(pre_post_process, opt):
-    if opt.fast_process_exist:
+    if opt.fast_process_exist_1:
         return
     print("save preprocesses ...")
     os.makedirs("data/fast_preprocess", exist_ok=True)

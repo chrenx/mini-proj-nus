@@ -29,6 +29,9 @@ class MultiEncoderDecoderModule(nn.Module):
 
         self.y_loc = torch.nn.Parameter(y_statistic["y_loc"], requires_grad=False)
         self.y_scale = torch.nn.Parameter(y_statistic["y_scale"], requires_grad=False)
+        # print("y_loc: ", self.y_loc.shape)     # (128,)
+        # print("y_scale: ", self.y_scale.shape) # (128,)
+
         self.inputs_decomposer_components = torch.nn.Parameter(inputs_decomposer_components, requires_grad=False)
         self.targets_decomposer_components = torch.nn.Parameter(targets_decomposer_components, requires_grad=False)
         self.targets_global_median = torch.nn.Parameter(y_statistic["targets_global_median"], requires_grad=False)

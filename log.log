@@ -57,3 +57,48 @@ Multiome:
 
 
 
+    # print("-----------keys")
+    # print(pre_post_process_default.preprocesses.keys())
+    # 'targets_imputator', 'targets_batch_medians', 'targets_global_median'有用, 
+    # 'targets_decomposer'有用, 'binary_inputs_decomposer', 'inputs_decomposer'有用
+    # print("targets_global_median", pre_post_process_default.preprocesses['targets_global_median'].shape) 
+    # 23418
+    # print(pre_post_process_default.preprocesses['targets_batch_medians'])
+    # for key in pre_post_process_default.preprocesses.keys():
+    #     print(key, type(pre_post_process_default.preprocesses[key]))
+
+
+MultiEncoderDecoderModule(
+  (encoder): MLPBModule(
+    (layers): ModuleList(
+      (0): LinearBlock(
+        (fc): Linear(in_features=2048, out_features=2048, bias=False)
+        (norm): LayerNorm((2048,), eps=1e-05, elementwise_affine=True)
+        (dropout): Dropout(p=0.4195254015709299, inplace=False)
+        (act): GELU(approximate='none')
+      )
+    )
+    (out_fc): Linear(in_features=2048, out_features=2048, bias=True)
+  )
+  (decoder): HierarchicalMLPBModule(
+    (in_fc): Linear(in_features=2048, out_features=2048, bias=True)
+    (layers): ModuleList(
+      (0-4): 5 x LinearBlock(
+        (fc): Linear(in_features=2048, out_features=2048, bias=False)
+        (norm): LayerNorm((2048,), eps=1e-05, elementwise_affine=True)
+        (dropout): Dropout(p=0.30449413021670935, inplace=False)
+        (act): GELU(approximate='none')
+      )
+    )
+  )
+  (mse_loss_func): MSELoss()
+  (encoder_in_fc): Linear(in_features=263, out_features=2048, bias=True)
+  (decoder_out_fcs): ModuleList(
+    (0-5): 6 x Linear(in_features=2048, out_features=128, bias=True)
+  )
+  (decoder_out_res_fcs): ModuleList(
+    (0-5): 6 x Linear(in_features=2048, out_features=23418, bias=True)
+  )
+)
+
+

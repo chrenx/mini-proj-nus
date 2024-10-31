@@ -1,11 +1,11 @@
 ---
 # project information ------------------------------------------------------------------------------
-exp_name: "unet_arch"
-description: null                # important notes (str)
+exp_name: "suzuki-arch"
+description: "original suzuki's working training"                # important notes (str)
 save_dir: null                   # save important files, weights, etc., will be intialized if null
 wandb_pj_name: "nus-mini-proj"
 wandb_entity: "chrenx"           # wandb account
-disable_wandb: true
+disable_wandb: false
 seed: 42                         # int
 debug: false
 
@@ -43,4 +43,5 @@ norm: "layer_norm"
 activation: "gelu"
 skip: false
 
-fast_process_exist: false
+fast_process_exist_1: true
+fast_process_exist_2: true

@@ -6,7 +6,7 @@ import optuna
 import pandas as pd
 from sklearn.linear_model import Ridge
 
-from utils.suzuki.model.encoder_decoder.encoder_decoder import EncoderDecoder
+from utils.suzuki.model.commander.model_commander import ModelCommander
 from utils.suzuki.pre_post_processing.pre_post_processing import PrePostProcessing
 from utils import *
 
@@ -22,11 +22,9 @@ def main():
     set_seed(opt.seed)
     set_redirect_printing(opt)
 
-    if opt.model == "ead":
-        model_class = EncoderDecoder
-        pre_post_process_class = PrePostProcessing
-    else:
-        raise ValueError
+    model_class = ModelCommander
+    pre_post_process_class = PrePostProcessing
+
 
     params = get_params_core(model_class=model_class, 
                              pre_post_process_class=pre_post_process_class,
@@ -64,12 +62,11 @@ def main():
     pre_post_process_default = pre_post_process_class(params["pre_post_process"])
     
     #! DEBUG =======================================================================================
-    if opt.fast_process_exist and not opt.debug:
+    if opt.fast_process_exist_1 and not opt.debug:
         pre_post_process_default = load_pre_post_process_instance(opt)
     #! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     else:
         #! This takes long time
-        # pass
         print(f"start fit_preprocess {opt.task_type} ...")
         pre_post_process_default.fit_preprocess(
             inputs_values=train_inputs,
@@ -81,18 +78,6 @@ def main():
     
         if not opt.debug:
             save_pre_post_process_class_instance(pre_post_process_default, opt)
-
-    #! DEBUG =======================================================================================
-    # print("-----------keys")
-    # print(pre_post_process_default.preprocesses.keys())
-    # 'targets_imputator', 'targets_batch_medians', 'targets_global_median'有用, 
-    # 'targets_decomposer'有用, 'binary_inputs_decomposer', 'inputs_decomposer'有用
-    # print("targets_global_median", pre_post_process_default.preprocesses['targets_global_median'].shape) 
-    # 23418
-    # print(pre_post_process_default.preprocesses['targets_batch_medians'])
-    # for key in pre_post_process_default.preprocesses.keys():
-    #     print(key, type(pre_post_process_default.preprocesses[key]))
-    #! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
     print("\ntrain inputs shape  : ", train_inputs.shape)
     print("train metadata shape: ", train_metadata.shape)
@@ -133,28 +118,30 @@ def main():
     else:
         print("skip pre_post_process fit")
 
-    preprocessed_inputs_values, preprocessed_targets_values = pre_post_process.preprocess(
-        inputs_values=train_inputs, targets_values=train_target, metadata=train_metadata
-    )
-    preprocessed_test_inputs, _ = pre_post_process.preprocess(
-        inputs_values=test_inputs, targets_values=None, metadata=test_metadata
-    )
+    if opt.fast_process_exist_2 and not opt.debug:
+        preprocessed_inputs_values, preprocessed_targets_values, preprocessed_test_inputs = \
+                                                                load_processed_inputs_targets(opt)
+    else:
+        preprocessed_inputs_values, preprocessed_targets_values = pre_post_process.preprocess(
+            inputs_values=train_inputs, targets_values=train_target, metadata=train_metadata
+        )
+        preprocessed_test_inputs, _ = pre_post_process.preprocess(
+            inputs_values=test_inputs, targets_values=None, metadata=test_metadata
+        )
+        if not opt.debug:
+            save_processed_inputs_targets(preprocessed_inputs_values, preprocessed_targets_values, 
+                                          preprocessed_test_inputs, opt)
+
 
     print("preprocessed_inputs_values:", preprocessed_inputs_values.shape)
-    print(preprocessed_inputs_values)
+    # print(preprocessed_inputs_values)
     print("preprocessed_targets_values:", preprocessed_targets_values.shape)
-    print(preprocessed_targets_values)
+    # print(preprocessed_targets_values)
     print("preprocessed_test_inputs:", preprocessed_test_inputs.shape)
-    print(preprocessed_test_inputs)
+    # print(preprocessed_test_inputs)
 
-    print("一切顺利")
-    exit(0)
+    model = build_model(model_class=model_class, params=params["model"])
 
-    model = build_model(params=params["model"])
-
-    print("一切顺利")
-    exit(0)
-    
     model.fit(
         x=train_inputs,
         y=train_target,
@@ -163,6 +150,7 @@ def main():
         metadata=train_metadata,
         pre_post_process=pre_post_process,
     )
+
     print(f"elapsed time = {time.time() - start_time: .3f}")
     print("pridict with test data", flush=True)
     start_time = time.time()
@@ -172,21 +160,20 @@ def main():
     y_test_pred = pre_post_process.postprocess(preprocessed_y_test_pred)
     print(f"elapsed time = {time.time() - start_time: .3f}")
     print("dump preprocess and model")
-    model_dir = os.path.join(args.out_dir, "model")
+    model_dir = opt.weights_dir
     os.makedirs(model_dir, exist_ok=True)
     with open(os.path.join(model_dir, "pre_post_process.pickle"), "wb") as f:
         pickle.dump(pre_post_process, f)
     model.save(model_dir)
 
-
     print("save results")
-    if args.task_type == "multi":
+    if opt.task_type == "multi":
         pred_file_path = "multimodal_pred.pickle"
-    elif args.task_type == "cite":
+    elif opt.task_type == "cite":
         pred_file_path = "citeseq_pred.pickle"
     else:
         raise ValueError
-    with open(os.path.join(args.weights, pred_file_path), "wb") as f:
+    with open(os.path.join(opt.save_dir, pred_file_path), "wb") as f:
         pickle.dump(y_test_pred, f)
     print("completed !")
 

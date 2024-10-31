@@ -5,18 +5,18 @@ import pickle
 import time
 
 import numpy as np
-import torch
+import torch, wandb
 
-from utils.suzuki.model.encoder_decoder.cite_encoder_decoder_module import CiteEncoderDecoderModule
-from utils.suzuki.model.encoder_decoder.mlp_module import HierarchicalMLPBModule, MLPBModule
-from utils.suzuki.model.encoder_decoder.multi_encoder_decoder_module import MultiEncoderDecoderModule
+from utils.suzuki.model.commander.cite_encoder_decoder_module import CiteEncoderDecoderModule
+from utils.suzuki.model.commander.mlp_module import HierarchicalMLPBModule, MLPBModule
+from utils.suzuki.model.commander.multi_encoder_decoder_module import MultiEncoderDecoderModule
 from utils.suzuki.model.torch_dataset.citeseq_dataset import CITEseqDataset
 from utils.suzuki.model.torch_dataset.multiome_dataset import MultiomeDataset
 from utils.suzuki.model.torch_helper.set_weight_decay import set_weight_decay
 from utils.suzuki.utility.summeary_torch_model_parameters import summeary_torch_model_parameters
 
 
-class EncoderDecoder(object):
+class ModelCommander(object):
     @staticmethod
     def get_params(opt, snapshot=None):
         params = {
@@ -34,6 +34,7 @@ class EncoderDecoder(object):
             "backbone": opt.backbone,
             "max_inputs_values_noisze_sigma": opt.max_inputs_values_noisze_sigma,
             "max_cutout_p": opt.max_cutout_p,
+            "opt": opt,
         }
         if params["backbone"] == "mlp":
             backbone_params = {
@@ -72,6 +73,8 @@ class EncoderDecoder(object):
         self.params = params
         self.inputs_info = {}
         self.model = None
+        self.opt = params['opt']
+        self.params.pop('opt', None)
 
     def _build_model(self):
         if self.params["snapshot"] is not None:
@@ -151,9 +154,16 @@ class EncoderDecoder(object):
         return loss
 
     def fit(self, x, preprocessed_x, y, preprocessed_y, metadata, pre_post_process):
+        # print("x             :", x.shape)               # (105942, 228942)
+        # print("preprocessed_x:", preprocessed_x.shape)  # (105942, 256)
+        # print("y             :", y.shape)               # (105942, 23418)
+        # print("preprocessed_y:", preprocessed_y.shape)  # (105942, 128)
+        # print("metadata      :", metadata.shape)        # (105942, 57)
+
         if self.params["device"] != "cpu":
             gc.collect()
             torch.cuda.empty_cache()
+
         self.inputs_info["x_dim"] = preprocessed_x.shape[1]
         self.inputs_info["y_dim"] = preprocessed_y.shape[1]
 
@@ -170,6 +180,7 @@ class EncoderDecoder(object):
             "y_loc": np.mean(preprocessed_y, axis=0),
             "y_scale": np.std(preprocessed_y, axis=0),
         }
+
         if "targets_global_median" in pre_post_process.preprocesses:
             y_statistic["targets_global_median"] = pre_post_process.preprocesses["targets_global_median"]
         self.inputs_info["y_statistic"] = y_statistic
@@ -177,6 +188,7 @@ class EncoderDecoder(object):
         if batch_size > len(dataset):
             batch_size = len(dataset)
         num_workers = int(os.getenv("OMP_NUM_THREADS", 1))
+
         data_loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=batch_size,
@@ -185,7 +197,10 @@ class EncoderDecoder(object):
             num_workers=num_workers,
         )
         self.model = self._build_model()
+
         self.model.to(device=self.params["device"])
+
+        #! 很奇怪 -----------------------------------------------------------------------------------
         dummy_batch = next(iter(data_loader))
         dummy_batch = self._batch_to_device(dummy_batch)
         self._train_step_forward(dummy_batch, 1.0)
@@ -203,9 +218,16 @@ class EncoderDecoder(object):
             optimizer=optimizer, max_lr=lr, total_steps=total_steps, pct_start=pct_start
         )
 
-        print("start to train")
+        print("start to train\n")
+
+        if not self.opt['disable_wandb']:
+            merged_dict = self.opt
+            merged_dict.update(self.params)
+            wandb.init(config=merged_dict, project=self.opt.wandb_pj_name, 
+                       entity=self.opt.wandb_entity, name=self.opt.exp_name, dir=self.opt.save_dir)
         start_time = time.time()
         self.model.train()
+        step_counter = 1
         for epoch in range(n_epochs):
             gc.collect()
             epoch_start_time = time.time()
@@ -222,23 +244,46 @@ class EncoderDecoder(object):
                 losses["loss"].backward()
                 # torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clipping)
                 optimizer.step()
-
                 scheduler.step()
+
+                if not self.opt.disable_wandb:
+                    log_dict = {
+                        "Train/loss_step": losses["loss"].item(),
+                    }
+                    wandb.log(log_dict, step=step_counter)
+                step_counter += 1
+
             end_time = time.time()
+
+            if not self.opt.disable_wandb:
+                wandb.log({'learning_rate': scheduler.get_last_lr()[0]}, 
+                            step=step_counter)
+
             if self.params["task_type"] == "multi":
                 loss = losses["loss"]
                 loss_corr = losses["loss_corr"]
                 loss_mse = losses["loss_mse"]
                 loss_res_mse = losses["loss_res_mse"]
                 loss_total_corr = losses["loss_total_corr"]
+        
                 print(
-                    f"epoch: {epoch} total time: {end_time - start_time:.1f}, epoch time: {end_time - epoch_start_time:.1f}, loss:{loss: .3f} "
+                    f"epoch: {epoch} total time: {end_time - start_time:.1f}, "
+                    f"epoch time: {end_time - epoch_start_time:.1f}, loss:{loss: .3f} "
                     f"loss_corr:{loss_corr: .3f} "
                     f"loss_mse:{loss_mse: .3f} "
                     f"loss_res_mse:{loss_res_mse: .3f} "
                     f"loss_total_corr:{loss_total_corr: .3f} ",
                     flush=True,
                 )
+                if not self.opt.disable_wandb:
+                    log_dict = {
+                        "Train/loss_epoch": loss.item(),
+                        "Train/loss_corr": loss_corr.item(), 
+                        "Train/loss_mse": loss_mse.item(),
+                        "Train/loss_res_mse": loss_res_mse.item(),
+                        "Train/loss_total_corr": loss_total_corr.item(),
+                    }
+                    wandb.log(log_dict, step=step_counter)
             elif self.params["task_type"] == "cite":
                 loss = losses["loss"]
                 loss_corr = losses["loss_corr"]
@@ -249,10 +294,19 @@ class EncoderDecoder(object):
                     f"loss_mse:{loss_mae: .3f} ",
                     flush=True,
                 )
+                if not self.opt.disable_wandb:
+                    log_dict = {
+                        "Train/loss_epoch": loss.item(),
+                        "Train/loss_corr": loss_corr.item(), 
+                        "Train/loss_mse": loss_mae.item(),
+                    }
+                    wandb.log(log_dict, step=step_counter)
             else:
                 raise RuntimeError
+            #! break  for debug
+
         print("completed training", flush=True)
-        summeary_torch_model_parameters(self.model)
+        # summeary_torch_model_parameters(self.model)
         self.model.to("cpu")
         return self
 
@@ -312,7 +366,10 @@ class EncoderDecoder(object):
         with open(os.path.join(model_dir, "inputs_info.pickle"), "wb") as f:
             pickle.dump(self.inputs_info, f)
         self.model.to(device="cpu")
-        torch.save(self.model, os.path.join(model_dir, "model.pt"))
+        saved_info = {
+            'model': self.model.state_dict(),
+        }
+        torch.save(saved_info, os.path.join(model_dir, f"{self.opt.task_type}_model.pt"))
 
     def load(self, model_dir):
         with open(os.path.join(model_dir, "params.json")) as f:

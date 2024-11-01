@@ -31,7 +31,7 @@ class PrePostProcessing(object):
             "device": opt.device,
             "task_type": opt.task_type,
             "inputs_decomposer_method": "svd",
-            "use_test_inputs": True,
+            "use_test_inputs": False,              # True,
             "use_inputs_decomposer": True,
             "binary_inputs_decomposer": {
                 "n_components": 128,

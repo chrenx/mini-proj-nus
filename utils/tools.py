@@ -20,7 +20,7 @@ def create_dirs_save_files(opt):
     with open(os.path.join(opt.codes_dir, "updated_config.yaml"), "w") as file:
         yaml.dump(opt, file, default_flow_style=False, sort_keys=False)
     # Save some important code
-    source_files = [f'train.sh',
+    source_files = [f'train_day7.sh', 'train_unseen_donor.sh'
                     f'train.py']
     for file_dir in source_files:
         shutil.copy2(file_dir, opt.codes_dir)
@@ -55,6 +55,7 @@ def parse_opt():
     parser.add_argument('--disable_wandb', action='store_true')
     parser.add_argument('--seed', type=int, help='initializing seed')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--problem_type', type=str, help='problem type')
     
     # data =========================================================================================
     parser.add_argument('--data_dir', type=str, help='data directory')
@@ -86,6 +87,7 @@ def parse_opt():
         for arg in cli_args: # update arguments if passed from command line; otherwise, use default
             opt[arg] = args[arg]
     opt.exp_name = opt.exp_name + '_' + opt.task_type
+    opt.data_dir += opt.problem_type
 
     cur_time = get_cur_time()
     opt.cur_time = cur_time
@@ -97,14 +99,14 @@ def parse_opt():
     opt.device = f"cuda:{opt.cuda_id}"
 
     if not opt.debug:
-        if os.path.exists(f"data/fast_preprocess/{opt.task_type}_whole_preprocess_obj.pickle"):
+        if os.path.exists(os.path.join(opt.data_dir, f"{opt.task_type}_whole_preprocess_obj.pickle")):
             opt.fast_process_exist_1 = True
         else:
             opt.fast_process_exist_1 = False
-        a=os.path.exists(f"data/fast_preprocess/{opt.task_type}_preprocessed_inputs_values.pickle")
-        b=os.path.exists(f"data/fast_preprocess/{opt.task_type}_preprocessed_targets_values.pickle")
-        c=os.path.exists(f"data/fast_preprocess/{opt.task_type}_preprocessed_test_inputs.pickle")
-        if a and b and c:
+        a=os.path.exists(os.path.join(opt.data_dir, f"{opt.task_type}_preprocessed_inputs_values.pickle"))
+        b=os.path.exists(os.path.join(opt.data_dir, f"{opt.task_type}_preprocessed_targets_values.pickle"))
+        # c=os.path.exists(os.path.join(opt.data_dir, f"{opt.task_type}_preprocessed_test_inputs.pickle"))
+        if a and b: # and c:
             opt.fast_process_exist_2 = True
         else:
             opt.fast_process_exist_2 = False
@@ -225,35 +227,35 @@ def get_group_id(metadata):
     assert (ret != -1).all()
     return ret # len: metadata.shape[0]
 
-def load_data(data_dir, task_type, cell_type="all", split="train"):
+def load_data(data_dir, task_type, problem_type, cell_type="all", split="train"):
     if (task_type == "multi") and (split == "train"):
         inputs_path = "train_multi_inputs_values.sparse.npz"
-        inputs_idxcol_path = "train_multi_inputs_idxcol.npz"
+        inputs_idxcol_path = f"train_multi_inputs_idxcol.npz"
         targets_path = "train_multi_targets_values.sparse.npz"
         cell_statistics_path = "normalized_multi_cell_statistics.parquet"
         batch_statistics_path = "normalized_multi_batch_statistics.parquet"
         batch_inputs_path = None
-    elif (task_type == "multi") and (split == "test"):
-        inputs_path = "test_multi_inputs_values.sparse.npz"
-        inputs_idxcol_path = "test_multi_inputs_idxcol.npz"
-        targets_path = None
-        cell_statistics_path = "normalized_multi_cell_statistics.parquet"
-        batch_statistics_path = "normalized_multi_batch_statistics.parquet"
-        batch_inputs_path = None
-    elif (task_type == "cite") and (split == "train"):
-        inputs_path = "train_cite_inputs_values.sparse.npz"
-        inputs_idxcol_path = "train_cite_inputs_idxcol.npz"
-        targets_path = "train_cite_targets_values.sparse.npz"
-        cell_statistics_path = "normalized_cite_cell_statistics.parquet"
-        batch_statistics_path = "normalized_cite_batch_statistics.parquet"
-        batch_inputs_path = "normalized_cite_batch_inputs.parquet"
-    elif (task_type == "cite") and (split == "test"):
-        inputs_path = "test_cite_inputs_values.sparse.npz"
-        inputs_idxcol_path = "test_cite_inputs_idxcol.npz"
-        targets_path = None
-        cell_statistics_path = "normalized_cite_cell_statistics.parquet"
-        batch_statistics_path = "normalized_cite_batch_statistics.parquet"
-        batch_inputs_path = "normalized_cite_batch_inputs.parquet"
+    # elif (task_type == "multi") and (split == "test"):
+    #     inputs_path = "test_multi_inputs_values.sparse.npz"
+    #     inputs_idxcol_path = "test_multi_inputs_idxcol.npz"
+    #     targets_path = None
+    #     cell_statistics_path = "normalized_multi_cell_statistics.parquet"
+    #     batch_statistics_path = "normalized_multi_batch_statistics.parquet"
+    #     batch_inputs_path = None
+    # elif (task_type == "cite") and (split == "train"):
+    #     inputs_path = "train_cite_inputs_values.sparse.npz"
+    #     inputs_idxcol_path = "train_cite_inputs_idxcol.npz"
+    #     targets_path = "train_cite_targets_values.sparse.npz"
+    #     cell_statistics_path = "normalized_cite_cell_statistics.parquet"
+    #     batch_statistics_path = "normalized_cite_batch_statistics.parquet"
+    #     batch_inputs_path = "normalized_cite_batch_inputs.parquet"
+    # elif (task_type == "cite") and (split == "test"):
+    #     inputs_path = "test_cite_inputs_values.sparse.npz"
+    #     inputs_idxcol_path = "test_cite_inputs_idxcol.npz"
+    #     targets_path = None
+    #     cell_statistics_path = "normalized_cite_cell_statistics.parquet"
+    #     batch_statistics_path = "normalized_cite_batch_statistics.parquet"
+    #     batch_inputs_path = "normalized_cite_batch_inputs.parquet"
     else:
         assert task_type == "multi"
         assert split == "train"
@@ -298,75 +300,99 @@ def load_data(data_dir, task_type, cell_type="all", split="train"):
 
 def load_processed_inputs_targets(opt):
     print("load processed_inputs_targets instance ...")
-    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_inputs_values.pickle", 'rb') as f:
+
+    input_path = os.path.join(opt.data_dir, f"{opt.task_type}_preprocessed_inputs_values.pickle")
+    target_path = os.path.join(opt.data_dir, f"{opt.task_type}_preprocessed_targets_values.pickle")
+
+    with open(input_path, 'rb') as f:
         preprocessed_inputs_values = pickle.load(f)
-    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_targets_values.pickle", 'rb') as f:
+    with open(target_path, 'rb') as f:
         preprocessed_targets_values = pickle.load(f)
-    with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_test_inputs.pickle", 'rb') as f:
-        preprocessed_test_inputs = pickle.load(f)
-    return preprocessed_inputs_values, preprocessed_targets_values, preprocessed_test_inputs
+    # with open(f"data/fast_preprocess/{opt.task_type}_preprocessed_test_inputs.pickle", 'rb') as f:
+    #     preprocessed_test_inputs = pickle.load(f)
+    # return preprocessed_inputs_values, preprocessed_targets_values, preprocessed_test_inputs
+    return preprocessed_inputs_values, preprocessed_targets_values
 
 def load_pre_post_process_instance(opt):
     print("load pre_post_process_class instance ...")
-    with open(f"data/fast_preprocess/{opt.task_type}_whole_preprocess_obj.pickle", 'rb') as f:
+    dpath = os.path.join(opt.data_dir, f"{opt.task_type}_whole_preprocess_obj.pickle")
+    with open(dpath, 'rb') as f:
         class_instance = pickle.load(f)
     return class_instance
 
-def save_processed_inputs_targets(preprocessed_inputs_values, preprocessed_targets_values, 
-                                  preprocessed_test_inputs, opt):
+# def save_processed_inputs_targets(preprocessed_inputs_values, preprocessed_targets_values, 
+#                                   preprocessed_test_inputs, opt):
+def save_processed_inputs_targets(preprocessed_inputs_values, preprocessed_targets_values, opt):
     if opt.fast_process_exist_2:
         return
     
-    train_input_path = f"data/fast_preprocess/{opt.task_type}_preprocessed_inputs_values.pickle"
-    target_path = f"data/fast_preprocess/{opt.task_type}_preprocessed_targets_values.pickle"
-    test_input_path = f"data/fast_preprocess/{opt.task_type}_preprocessed_test_inputs.pickle"
+    train_input_path = os.path.join(opt.data_dir, f"{opt.task_type}_preprocessed_inputs_values.pickle")
+    target_path = os.path.join(opt.data_dir, f"{opt.task_type}_preprocessed_targets_values.pickle")
+    # test_input_path = os.path.join(opt.data_dir, f"{opt.task_type}_preprocessed_test_inputs.pickle")
 
-    if os.path.exists(train_input_path) and os.path.exists(target_path) and \
-       os.path.exists(test_input_path):
+    if os.path.exists(train_input_path) and os.path.exists(target_path):
         return
 
     print("save processed_inputs_targets ...")
-    os.makedirs("data/fast_preprocess", exist_ok=True)
+    os.makedirs(opt.data_dir, exist_ok=True)
     with open(train_input_path, 'wb') as f:
         pickle.dump(preprocessed_inputs_values, f)
     with open(target_path, 'wb') as f:
         pickle.dump(preprocessed_targets_values, f)
-    with open(test_input_path, 'wb') as f:
-        pickle.dump(preprocessed_test_inputs, f)
+    # with open(test_input_path, 'wb') as f:
+    #     pickle.dump(preprocessed_test_inputs, f)
 
 def save_pre_post_process_class_instance(pre_post_process, opt):
     if opt.fast_process_exist_1:
         return
-    class_instance_path = f"data/fast_preprocess/{opt.task_type}_whole_preprocess_obj.pickle"
+    class_instance_path = os.path.join(opt.data_dir, f"{opt.task_type}_whole_preprocess_obj.pickle")
     if os.path.exists(class_instance_path):
         return
     print("save preprocesses ...")
-    os.makedirs("data/fast_preprocess", exist_ok=True)
+    os.makedirs(opt.data_dir, exist_ok=True)
     with open(class_instance_path, "wb") as f:
         pickle.dump(pre_post_process, f)
 
-def split_dataset_save_load_idx(dataset, opt):
-    train_idx_path = f"data/train_dataloader_idx_{opt.task_type}.npy"
-    val_idx_path = f"data/val_dataloader_idx_{opt.task_type}.npy"
-    test_idx_path = f"data/test_dataloader_idx_{opt.task_type}.npy"
+def split_dataset_save_load_idx(dataset, opt, metadata):
+    train_idx_path = os.path.join(opt.data_dir, f"train_dataloader_idx_{opt.task_type}.npy")
+    val_idx_path = os.path.join(opt.data_dir, f"val_dataloader_idx_{opt.task_type}.npy")
+    test_idx_path = os.path.join(opt.data_dir, f"test_dataloader_idx_{opt.task_type}.npy")
 
     if os.path.exists(train_idx_path) and os.path.exists(val_idx_path) and \
        os.path.exists(test_idx_path):
         train_idx = np.load(train_idx_path).tolist()
         val_idx = np.load(val_idx_path).tolist()
         test_idx = np.load(test_idx_path).tolist()
+        print("train val test idx have been loaded")
         return train_idx, val_idx, test_idx
     
-    dataset_size = len(dataset)
-    train_size = int(dataset_size * 0.8)
-    val_size = int(dataset_size * 0.1)
-    indices = torch.randperm(dataset_size).tolist()
-    train_idx = indices[:train_size]
-    val_idx = indices[train_size:train_size + val_size]
-    test_idx = indices[train_size + val_size:]
+    base = "day7"
+    if opt.problem_type == "unseen_donor":
+        base = "donor32"
+    test_idx = np.load(os.path.join(opt.data_dir, f"test_multi_{base}_inputs_idxcol.npz"), 
+                                      allow_pickle=True)["index"]
+
+    test_idx = metadata.index.get_indexer(test_idx)
+    all_indices = np.arange(len(metadata))  # All row indices in metadata
+    rest_indices = np.setdiff1d(all_indices, test_idx)  # Find indices not in row_indices
+
+    assert len(test_idx) + len(rest_indices) == len(metadata), "unmatched length"
+    
+    np.random.shuffle(rest_indices)
+    split_point = int(0.9 * len(rest_indices))
+    train_idx = rest_indices[:split_point]
+    val_idx = rest_indices[split_point:]
+    # dataset_size = len(dataset)
+    # train_size = int(dataset_size * 0.8)
+    # val_size = int(dataset_size * 0.1)
+    # indices = torch.randperm(dataset_size).tolist()
+    # train_idx = indices[:train_size]
+    # val_idx = indices[train_size:train_size + val_size]
+    # test_idx = indices[train_size + val_size:]
     np.save(train_idx_path, train_idx)
     np.save(val_idx_path, val_idx)
     np.save(test_idx_path, test_idx)
+    print("train val test idx have been splited and saved")
     return train_idx, val_idx, test_idx
 
 #*--------------------------------------------------------------------------------------------------

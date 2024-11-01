@@ -53,11 +53,12 @@ def main():
     else:
         train_inputs, train_metadata, train_target = load_data(data_dir=opt.data_dir, 
                                                            task_type=opt.task_type, 
+                                                           problem_type=opt.problem_type,
                                                            split="train", 
                                                            cell_type=CELL_TYPE_NAMES[opt.cell_type])
-        test_inputs, test_metadata, _ = load_data(data_dir=opt.data_dir, 
-                                                task_type=opt.task_type, 
-                                                split="test")
+        # test_inputs, test_metadata, _ = load_data(data_dir=opt.data_dir, 
+        #                                         task_type=opt.task_type, 
+        #                                         split="test")
     
     pre_post_process_default = pre_post_process_class(params["pre_post_process"])
     
@@ -72,8 +73,8 @@ def main():
             inputs_values=train_inputs,
             targets_values=train_target,
             metadata=train_metadata,
-            test_inputs_values=test_inputs,
-            test_metadata=test_metadata,
+            test_inputs_values=None, # test_inputs,
+            test_metadata=None, # test_metadata,
         )
     
         if not opt.debug:
@@ -82,29 +83,9 @@ def main():
     print("\ntrain inputs shape  : ", train_inputs.shape)
     print("train metadata shape: ", train_metadata.shape)
     print("train targets shape : ", train_target.shape)
-    print("test inputs shape   : ", test_inputs.shape)
-    print("test metadata shape : ", test_metadata.shape, "\n")
+    # print("test inputs shape   : ", test_inputs.shape)
+    # print("test metadata shape : ", test_metadata.shape, "\n")
 
-    # cv = CrossValidation()
-    # result_df, k_fold_models, k_fold_pre_post_processes = cv.compute_score(
-    #     x=train_inputs,
-    #     y=train_target,
-    #     metadata=train_metadata,
-    #     x_test=test_inputs,
-    #     metadata_test=test_metadata,
-    #     build_model=build_model,
-    #     build_pre_post_process=build_pre_post_process,
-    #     params=params,
-    #     n_splits=3,
-    #     dump=False,
-    #     dump_dir=opt.save_dir,
-    #     n_bagging=0,
-    #     model_class=model_class,
-    #     pre_post_process_class=pre_post_process_class,
-    # )
-    # print("Average:", result_df.mean(), flush=True)
-    # del cv
-    # gc.collect()
 
     print("train model to predict with test data", flush=True)
     start_time = time.time()
@@ -119,25 +100,28 @@ def main():
         print("skip pre_post_process fit")
 
     if opt.fast_process_exist_2 and not opt.debug:
-        preprocessed_inputs_values, preprocessed_targets_values, preprocessed_test_inputs = \
-                                                                load_processed_inputs_targets(opt)
+        # preprocessed_inputs_values, preprocessed_targets_values, preprocessed_test_inputs = \
+        #                                                         load_processed_inputs_targets(opt)
+        preprocessed_inputs_values, preprocessed_targets_values = load_processed_inputs_targets(opt)
     else:
         preprocessed_inputs_values, preprocessed_targets_values = pre_post_process.preprocess(
             inputs_values=train_inputs, targets_values=train_target, metadata=train_metadata
         )
-        preprocessed_test_inputs, _ = pre_post_process.preprocess(
-            inputs_values=test_inputs, targets_values=None, metadata=test_metadata
-        )
+        # preprocessed_test_inputs, _ = pre_post_process.preprocess(
+        #     inputs_values=test_inputs, targets_values=None, metadata=test_metadata
+        # )
         if not opt.debug:
+            # save_processed_inputs_targets(preprocessed_inputs_values, preprocessed_targets_values, 
+            #                               preprocessed_test_inputs, opt)
             save_processed_inputs_targets(preprocessed_inputs_values, preprocessed_targets_values, 
-                                          preprocessed_test_inputs, opt)
+                                          opt)
 
 
     print("preprocessed_inputs_values:", preprocessed_inputs_values.shape)
     # print(preprocessed_inputs_values)
     print("preprocessed_targets_values:", preprocessed_targets_values.shape)
     # print(preprocessed_targets_values)
-    print("preprocessed_test_inputs:", preprocessed_test_inputs.shape)
+    # print("preprocessed_test_inputs:", preprocessed_test_inputs.shape)
     # print(preprocessed_test_inputs)
 
     Trainer = build_model(model_class=model_class, params=params["model"])

@@ -169,7 +169,7 @@ class ModelCommander(object):
         print("dataset size", len(dataset))
         assert len(dataset) > 0
 
-        train_idx, val_idx, test_idx = split_dataset_save_load_idx(dataset, self.opt)
+        train_idx, val_idx, test_idx = split_dataset_save_load_idx(dataset, self.opt, metadata)
         train_dataset = Subset(dataset, train_idx)
         val_dataset = Subset(dataset, val_idx)
         test_dataset = Subset(dataset, test_idx)

@@ -1,16 +1,17 @@
 ---
 # project information ------------------------------------------------------------------------------
-exp_name: "suzuki-arch"
-description: "working on the chosen data"                # important notes (str)
+exp_name: "suzuki-day7"
+description: "problem day7"                # important notes (str)
 save_dir: null                   # save important files, weights, etc., will be intialized if null
 wandb_pj_name: "nus-mini-proj"
 wandb_entity: "chrenx"           # wandb account
 disable_wandb: false
 seed: 42                         # int
 debug: false
+problem_type: "day7"             # problem type: day7 | unseen_donor
 
 # data ---------------------------------------------------------------------------------------------
-data_dir: "data/fast_load_orig_data"
+data_dir: "data/problem_"
 
 # GPU ----------------------------------------------------------------------------------------------
 cuda_id: "9"

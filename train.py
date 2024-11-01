@@ -140,9 +140,9 @@ def main():
     print("preprocessed_test_inputs:", preprocessed_test_inputs.shape)
     # print(preprocessed_test_inputs)
 
-    model = build_model(model_class=model_class, params=params["model"])
+    Trainer = build_model(model_class=model_class, params=params["model"])
 
-    model.fit(
+    Trainer.fit(
         x=train_inputs,
         y=train_target,
         preprocessed_x=preprocessed_inputs_values,
@@ -151,30 +151,34 @@ def main():
         pre_post_process=pre_post_process,
     )
 
-    print(f"elapsed time = {time.time() - start_time: .3f}")
-    print("pridict with test data", flush=True)
-    start_time = time.time()
-    preprocessed_y_test_pred = model.predict(
-        x=test_inputs, preprocessed_x=preprocessed_test_inputs, metadata=test_metadata
-    )
-    y_test_pred = pre_post_process.postprocess(preprocessed_y_test_pred)
-    print(f"elapsed time = {time.time() - start_time: .3f}")
-    print("dump preprocess and model")
-    model_dir = opt.weights_dir
-    os.makedirs(model_dir, exist_ok=True)
-    with open(os.path.join(model_dir, "pre_post_process.pickle"), "wb") as f:
-        pickle.dump(pre_post_process, f)
-    model.save(model_dir)
 
-    print("save results")
-    if opt.task_type == "multi":
-        pred_file_path = "multimodal_pred.pickle"
-    elif opt.task_type == "cite":
-        pred_file_path = "citeseq_pred.pickle"
-    else:
-        raise ValueError
-    with open(os.path.join(opt.save_dir, pred_file_path), "wb") as f:
-        pickle.dump(y_test_pred, f)
+    # print(f"elapsed time = {time.time() - start_time: .3f}")
+    # print("predict with test data", flush=True)
+    # start_time = time.time()
+    # preprocessed_y_test_pred = Trainer.predict(
+    #     x=test_inputs, preprocessed_x=preprocessed_test_inputs, metadata=test_metadata
+    # )
+
+    # y_test_pred = pre_post_process.postprocess(preprocessed_y_test_pred) # (55935, 23418)
+
+    # print(f"elapsed time = {time.time() - start_time: .3f}")
+    # print("dump preprocess and model")
+    # model_dir = opt.weights_dir
+    # os.makedirs(model_dir, exist_ok=True)
+    # with open(os.path.join(model_dir, "pre_post_process.pickle"), "wb") as f:
+    #     pickle.dump(pre_post_process, f)
+    # Trainer.save(model_dir)
+
+    # print("save results")
+    # if opt.task_type == "multi":
+    #     pred_file_path = "multimodal_pred.pickle"
+    # elif opt.task_type == "cite":
+    #     pred_file_path = "citeseq_pred.pickle"
+    # else:
+    #     raise ValueError
+    # with open(os.path.join(opt.save_dir, pred_file_path), "wb") as f:
+    #     pickle.dump(y_test_pred, f)
+
     print("completed !")
 
 

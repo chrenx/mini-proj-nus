@@ -352,10 +352,10 @@ def split_dataset_save_load_idx(dataset, opt):
 
     if os.path.exists(train_idx_path) and os.path.exists(val_idx_path) and \
        os.path.exists(test_idx_path):
-        train_idx = np.load('train_indices.npy').tolist()
-        val_idx = np.load('val_indices.npy').tolist()
-        test_idx = np.load('test_indices.npy').tolist()
-        return
+        train_idx = np.load(train_idx_path).tolist()
+        val_idx = np.load(val_idx_path).tolist()
+        test_idx = np.load(test_idx_path).tolist()
+        return train_idx, val_idx, test_idx
     
     dataset_size = len(dataset)
     train_size = int(dataset_size * 0.8)

@@ -1,11 +1,9 @@
-import gc
-import json
-import os
-import pickle
-import time
+import gc, glob, json, os, pickle, time
 
 import numpy as np
 import torch, wandb
+from torch.utils.data import Subset
+from tqdm import tqdm
 
 from utils import split_dataset_save_load_idx
 from utils.suzuki.model.commander.cite_encoder_decoder_module import CiteEncoderDecoderModule
@@ -78,10 +76,6 @@ class ModelCommander(object):
         self.params.pop('opt', None)
 
     def _build_model(self):
-        if self.params["snapshot"] is not None:
-            print(f"load model from {self.params['snapshot']}")
-            model = torch.load(os.path.join(self.params["snapshot"], "model.pt"))
-            return model
         x_dim = self.inputs_info["x_dim"]
         y_dim = self.inputs_info["y_dim"]
         inputs_decomposer_components = torch.tensor(self.inputs_info["inputs_decomposer_components"])
@@ -119,8 +113,8 @@ class ModelCommander(object):
 
         if self.params["task_type"] == "multi":
             model = MultiEncoderDecoderModule(
-                x_dim=x_dim,
-                y_dim=y_dim,
+                x_dim=x_dim, # 256
+                y_dim=y_dim, # 128
                 y_statistic=y_statistic,
                 encoder_h_dim=self.params["encoder_h_dim"],
                 decoder_h_dim=self.params["decoder_h_dim"],
@@ -176,6 +170,13 @@ class ModelCommander(object):
         assert len(dataset) > 0
 
         train_idx, val_idx, test_idx = split_dataset_save_load_idx(dataset, self.opt)
+        train_dataset = Subset(dataset, train_idx)
+        val_dataset = Subset(dataset, val_idx)
+        test_dataset = Subset(dataset, test_idx)
+
+        print("len train dataset:", len(train_dataset))
+        print("len val dataset:", len(val_dataset))
+        print("len test dataset:", len(test_dataset))
 
         self.inputs_info["inputs_decomposer_components"] = pre_post_process.preprocesses["inputs_decomposer"].components_
         self.inputs_info["targets_decomposer_components"] = pre_post_process.preprocesses["targets_decomposer"].components_
@@ -193,21 +194,38 @@ class ModelCommander(object):
             batch_size = len(dataset)
         num_workers = int(os.getenv("OMP_NUM_THREADS", 1))
 
-        data_loader = torch.utils.data.DataLoader(
-            dataset,
+        train_data_loader = torch.utils.data.DataLoader(
+            train_dataset,
             batch_size=batch_size,
             shuffle=True,
-            drop_last=True,
+            # drop_last=True,
             num_workers=num_workers,
         )
+
+        val_data_loader = torch.utils.data.DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            # drop_last=True,
+            num_workers=num_workers,
+        )
+
+        test_data_loader = torch.utils.data.DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            # drop_last=True,
+            num_workers=num_workers,
+        )
+
         self.model = self._build_model()
 
         self.model.to(device=self.params["device"])
 
-        #! 为了一些var的初始化？ ----------------------------------------------------------------------
-        dummy_batch = next(iter(data_loader))
-        dummy_batch = self._batch_to_device(dummy_batch)
-        self._train_step_forward(dummy_batch, 1.0)
+        #! 为了一些var的初始化  -----------------------------------------------------------------------
+        # dummy_batch = next(iter(train_data_loader))
+        # dummy_batch = self._batch_to_device(dummy_batch)
+        # self._train_step_forward(dummy_batch, 1.0)
 
         lr = self.params["lr"]
         eps = self.params["eps"]
@@ -230,9 +248,11 @@ class ModelCommander(object):
             wandb.init(config=merged_dict, project=self.opt.wandb_pj_name, 
                        entity=self.opt.wandb_entity, name=self.opt.exp_name, dir=self.opt.save_dir)
         start_time = time.time()
-        self.model.train()
+
         step_counter = 1
-        for epoch in range(n_epochs):
+        best_val_avg_loss = float('inf')
+        best_val_avg_pcc = 0
+        for epoch in tqdm(range(n_epochs), desc="Train"):
             gc.collect()
             epoch_start_time = time.time()
             if epoch < self.params["burnin_length_epoch"]:
@@ -241,7 +261,11 @@ class ModelCommander(object):
                 training_length_ratio = (epoch - self.params["burnin_length_epoch"]) / (
                     n_epochs - self.params["burnin_length_epoch"]
                 )
-            for _, batch in enumerate(data_loader):
+            #! Training part =======================================================================    
+            self.model.train()
+            avg_train_loss = 0
+            avg_train_pcc = 0
+            for _, batch in enumerate(train_data_loader):
                 batch = self._batch_to_device(batch)
                 optimizer.zero_grad()
                 losses = self._train_step_forward(batch, training_length_ratio)
@@ -250,18 +274,21 @@ class ModelCommander(object):
                 optimizer.step()
                 scheduler.step()
 
+                avg_train_loss += losses["loss"].item()
+                avg_train_pcc += losses["pcc"].item()
+
                 if not self.opt.disable_wandb:
                     log_dict = {
                         "Train/loss_step": losses["loss"].item(),
+                        "Train/pcc_step": losses["pcc"].item(),
                     }
                     wandb.log(log_dict, step=step_counter)
                 step_counter += 1
 
             end_time = time.time()
 
-            if not self.opt.disable_wandb:
-                wandb.log({'learning_rate': scheduler.get_last_lr()[0]}, 
-                            step=step_counter)
+            avg_train_loss /= len(train_data_loader)
+            avg_train_pcc /= len(train_data_loader)
 
             if self.params["task_type"] == "multi":
                 loss = losses["loss"]
@@ -269,18 +296,30 @@ class ModelCommander(object):
                 loss_mse = losses["loss_mse"]
                 loss_res_mse = losses["loss_res_mse"]
                 loss_total_corr = losses["loss_total_corr"]
-        
+                pcc_epoch = losses['pcc']
+
                 print(
                     f"epoch: {epoch} total time: {end_time - start_time:.1f}, "
-                    f"epoch time: {end_time - epoch_start_time:.1f}, loss:{loss: .3f} "
-                    f"loss_corr:{loss_corr: .3f} "
-                    f"loss_mse:{loss_mse: .3f} "
-                    f"loss_res_mse:{loss_res_mse: .3f} "
-                    f"loss_total_corr:{loss_total_corr: .3f} ",
+                    f"epoch time: {end_time - epoch_start_time:.1f}, "
+                    f"avg_train_loss: {avg_train_loss}, "
+                    f"avg_train_pcc: {avg_train_pcc}",
                     flush=True,
                 )
+        
+                # print(
+                #     f"epoch: {epoch} total time: {end_time - start_time:.1f}, "
+                #     f"epoch time: {end_time - epoch_start_time:.1f}, train_loss:{loss: .3f} "
+                #     f"train_loss_corr:{loss_corr: .3f} "
+                #     f"train_loss_mse:{loss_mse: .3f} "
+                #     f"train_loss_res_mse:{loss_res_mse: .3f} "
+                #     f"train_loss_total_corr:{loss_total_corr: .3f} "
+                #     f"train_pcc:{pcc_epoch: .3f} ",
+                #     flush=True,
+                # )
                 if not self.opt.disable_wandb:
                     log_dict = {
+                        "Train/avg_train_loss": avg_train_loss,
+                        "Train/avg_train_pcc": avg_train_pcc,
                         "Train/loss_epoch": loss.item(),
                         "Train/loss_corr": loss_corr.item(), 
                         "Train/loss_mse": loss_mse.item(),
@@ -308,17 +347,91 @@ class ModelCommander(object):
                     wandb.log(log_dict, step=step_counter)
             else:
                 raise RuntimeError
-            #! break  for debug
+            
+            if not self.opt.disable_wandb:
+                wandb.log({'learning_rate': scheduler.get_last_lr()[0]}, 
+                            step=step_counter)
+                
+            #! For validation and testing ==========================================================
+            self.model.eval()
+            with torch.no_grad():
+                val_avg_loss = 0.0
+                val_avg_pcc = 0.0
+                for _, batch in enumerate(val_data_loader):
+                    batch = self._batch_to_device(batch)
+                    losses = self._train_step_forward(batch, training_length_ratio=0)
+                    val_avg_loss += losses['loss'].item()
+                    val_avg_pcc += losses['pcc'].item()
+
+                val_avg_loss /= len(val_data_loader)
+                val_avg_pcc /= len(val_data_loader)
+    
+                if not self.opt.disable_wandb:
+                    log_dict = {
+                        "Val/avg_loss_epoch": val_avg_loss,
+                        "Val/avg_pcc_epoch": val_avg_pcc,
+                    }
+                    wandb.log(log_dict, step=step_counter)
+                
+                print(f"average VAL loss at epoch {epoch} ---> {val_avg_loss}", flush=True)
+                print(f"average VAL pcc at epoch {epoch} ---> {val_avg_pcc}", flush=True)
+                
+                if val_avg_loss < best_val_avg_loss:
+                    best_val_avg_loss = val_avg_loss
+                    if not self.opt.disable_wandb:
+                        wandb.run.summary['best_val_loss/step/epoch'] = [best_val_avg_loss, 
+                                                                         step_counter, epoch]
+                    self.run_test(test_data_loader, len(test_data_loader), 
+                                  step=step_counter, epoch=epoch, base="loss")
+                    self.save_best_model(step_counter, epoch, base="loss")
+
+                if abs(val_avg_pcc) > abs(best_val_avg_pcc):
+                    best_val_avg_pcc = val_avg_pcc
+                    if not self.opt.disable_wandb:
+                        wandb.run.summary['best_val_pcc/step/epoch'] = [best_val_avg_pcc, 
+                                                                        step_counter, epoch]
+                    self.run_test(test_data_loader, len(test_data_loader), 
+                                  step=step_counter, epoch=epoch, base="pcc")
+                    self.save_best_model(step_counter, epoch, base="pcc")
+                
+                print()
+
 
         print("completed training", flush=True)
-        # summeary_torch_model_parameters(self.model)
         self.model.to("cpu")
+        if not self.opt.disable_wandb:
+            wandb.run.finish()
         return self
+    
+    def run_test(self, test_data_loader, len_test_data_loader, step, epoch, base):
+        self.model.eval()
+        with torch.no_grad():
+            test_avg_loss = 0.0
+            test_avg_pcc = 0.0
+            for _, batch in enumerate(test_data_loader):
+                batch = self._batch_to_device(batch)
+                losses = self._train_step_forward(batch, training_length_ratio=0)
+                test_avg_loss += losses['loss'].item()
+                test_avg_pcc += losses['pcc'].item()
 
+
+            test_avg_loss /= len_test_data_loader
+            test_avg_pcc /= len_test_data_loader
+    
+            if not self.opt.disable_wandb:
+                wandb.run.summary[f'test_loss_from_best_val_{base}/step/epoch'] = [test_avg_loss, 
+                                                                                   step, epoch]
+                wandb.run.summary[f'test_pcc_from_best_val_{base}/step/epoch'] = [test_avg_pcc, 
+                                                                                  step, epoch]
+            
+            print(f"average TEST loss at epoch {epoch} ---> {test_avg_loss}", flush=True)
+            print(f"average TEST pcc at epoch {epoch} ---> {test_avg_pcc}", flush=True)
+        
     def _build_dataset(self, x, preprocessed_x, metadata, y, preprocessed_y, eval=True):
         selected_metadata = None
         if not eval:
             if "selected_metadata" in self.params:
+                print("!有 selected_metadata")
                 selected_metadata = self.params["selected_metadata"]
         if self.params["task_type"] == "multi":
             dataset = MultiomeDataset(
@@ -347,23 +460,51 @@ class ModelCommander(object):
         if self.params["device"] != "cpu":
             gc.collect()
             torch.cuda.empty_cache()
-        self.model = self.model.to(self.params["device"])
-        self.model.eval()
+
+        search_pattern = os.path.join(self.opt.weights_dir, f"best_model_loss*")
+        files_to_search = glob.glob(search_pattern)
+        assert len(files_to_search) == 1, "more than one best model"
+        best_model_path = files_to_search[0]
+        weights = torch.load(best_model_path, map_location=self.opt.device, 
+                             weights_only=True)['model']
+        predict_model = self._build_model()
+        predict_model.to(self.params["device"])
+        predict_model.load_state_dict(weights)
+        
         dataset = self._build_dataset(
             x=x, preprocessed_x=preprocessed_x, metadata=metadata, y=None, preprocessed_y=None, eval=True
         )
         test_batch_size = self.params["test_batch_size"]
         data_loader = torch.utils.data.DataLoader(dataset, batch_size=test_batch_size, num_workers=0)
         y_pred = []
+        predict_model.eval()
         with torch.no_grad():
             for batch in data_loader:
                 batch = self._batch_to_device(batch)
-                y_batch_pred = self.model.predict(*batch[0:3])
+                y_batch_pred = predict_model.predict(*batch[0:3])
                 y_batch_pred = y_batch_pred.to("cpu").detach().numpy()
                 y_pred.append(y_batch_pred)
         y_pred = np.vstack(y_pred)
-        self.model.to("cpu")
+
         return y_pred
+
+    def save_best_model(self, step_counter, epoch, base):
+        model_info = {
+            'step': step_counter,
+            'epoch': epoch,
+            'model': self.model.state_dict(),
+        }
+        # delete previous best* or model*
+        search_pattern = os.path.join(self.opt.weights_dir, f"best_model_{base}*")
+        files_to_delete = glob.glob(search_pattern)
+        for file_path in files_to_delete:
+            try:
+                os.remove(file_path)
+            except OSError as e:
+                print(f"Error deleting file {file_path}: {e}")
+        filename = f"best_model_{base}_s{step_counter}_e{epoch}.pt"
+        torch.save(model_info, os.path.join(self.opt.weights_dir, filename))     
+        print(f"         saved best model at step {step_counter}, epoch {epoch}")     
 
     def save(self, model_dir):
         with open(os.path.join(model_dir, "params.json"), "w") as f:

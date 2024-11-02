@@ -9,4 +9,7 @@ runs/*
 !data/orig_data/.gitkeep
 !data/fast_load_orig_data/.gitkeep
 !data/fast_preprocess/.gitkeep
+!data/test_dataloader_idx_multi.npy
+!data/train_dataloader_idx_multi.npy
+!data/val_dataloader_idx_multi.npy
 

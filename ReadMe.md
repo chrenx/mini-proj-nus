@@ -1,6 +1,6 @@
 ## Getting Started
 
-Download [data]() to avoid time-consuming data processing stage. Put all download data under folder /data/problem_day7
+Download [data](https://drive.google.com/drive/folders/1hcsExiOCWTP2LG5fhfBkph9vcKJhv65n?usp=sharing) to avoid time-consuming data processing stage. Put all download data under folder /data/problem_day7
 
 ### Environment Configuration
 * conda

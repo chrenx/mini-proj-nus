@@ -1,7 +1,7 @@
 ---
 # project information ------------------------------------------------------------------------------
-exp_name: "suzuki-day7"
-description: "problem day7"                # important notes (str)
+exp_name: "my-day7"
+description: "no unet decoder"  # important notes (str)
 save_dir: null                   # save important files, weights, etc., will be intialized if null
 wandb_pj_name: "nus-mini-proj"
 wandb_entity: "chrenx"           # wandb account
@@ -14,7 +14,7 @@ problem_type: "day7"             # problem type: day7 | unseen_donor
 data_dir: "data/problem_"
 
 # GPU ----------------------------------------------------------------------------------------------
-cuda_id: "9"
+cuda_id: "9"                     #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 # training -----------------------------------------------------------------------------------------
 save_best_model: true
@@ -24,7 +24,7 @@ cell_type: "all"                 # choices=["all","hsc","eryp","neup","masp","mk
 model: "ead"
 train_batch_size: 64
 test_batch_size: 16
-epoch: 80
+epoch: 200
 lr: 1.0e-3
 eps: 1.0e-8
 weight_decay: 1.0e-4
@@ -32,10 +32,10 @@ pct_start: 0.3
 burnin_length_epoch: 10
 max_inputs_values_noisze_sigma: 0.0
 max_cutout_p: 0.0
-backbone: "mlp"
+backbone: "unet"
 # suzuki's work for params with "mlp" backbone ---------------------------------
-encoder_h_dim: 2048
-decoder_h_dim: 2048
+encoder_h_dim: 2048 # 512 for unet
+decoder_h_dim: 2048 # 512 for unet
 encoder_dropout_p: 0.0
 decoder_dropout_p: 0.0
 n_encoder_block: 1
@@ -46,3 +46,6 @@ skip: false
 
 fast_process_exist_1: true
 fast_process_exist_2: true
+
+# Unet
+channel: 10

@@ -20,7 +20,7 @@ def create_dirs_save_files(opt):
     with open(os.path.join(opt.codes_dir, "updated_config.yaml"), "w") as file:
         yaml.dump(opt, file, default_flow_style=False, sort_keys=False)
     # Save some important code
-    source_files = [f'train_day7.sh', 'train_unseen_donor.sh'
+    source_files = [f'train_day7.sh', 'train_unseen_donor.sh',
                     f'train.py']
     for file_dir in source_files:
         shutil.copy2(file_dir, opt.codes_dir)
@@ -75,6 +75,7 @@ def parse_opt():
     parser.add_argument('--test_batch_size', type=int, help='batch size for testing')
     parser.add_argument('--epoch', type=int, help='num of epoch')
     parser.add_argument('--lr', type=float, help='learning rate')
+    parser.add_argument('--backbone', type=str)
 
     # ==============================================================================================
 

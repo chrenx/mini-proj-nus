@@ -9,6 +9,7 @@ from utils import split_dataset_save_load_idx
 from utils.suzuki.model.commander.cite_encoder_decoder_module import CiteEncoderDecoderModule
 from utils.suzuki.model.commander.mlp_module import HierarchicalMLPBModule, MLPBModule
 from utils.suzuki.model.commander.multi_encoder_decoder_module import MultiEncoderDecoderModule
+from utils.suzuki.model.commander.multi_unet import MultiUnet
 from utils.suzuki.model.torch_dataset.citeseq_dataset import CITEseqDataset
 from utils.suzuki.model.torch_dataset.multiome_dataset import MultiomeDataset
 from utils.suzuki.model.torch_helper.set_weight_decay import set_weight_decay
@@ -37,8 +38,21 @@ class ModelCommander(object):
         }
         if params["backbone"] == "mlp":
             backbone_params = {
-                "encoder_h_dim": opt.encoder_h_dim,  # 128,
+                "encoder_h_dim": opt.encoder_h_dim,  # 2048,
                 "decoder_h_dim": opt.decoder_h_dim,  # 128,
+                "encoder_dropout_p": opt.encoder_dropout_p,
+                "decoder_dropout_p": opt.decoder_dropout_p,
+                "n_encoder_block": opt.n_encoder_block,
+                "n_decoder_block": opt.n_decoder_block,
+                "norm": opt.norm,
+                "activation": opt.activation,  # relu, "gelu"
+                "skip": opt.skip,
+            }
+        elif params["backbone"] == "unet":
+            # TODO
+            backbone_params = {
+                "encoder_h_dim": 512,
+                "decoder_h_dim": 512,  # 128,
                 "encoder_dropout_p": opt.encoder_dropout_p,
                 "decoder_dropout_p": opt.decoder_dropout_p,
                 "n_encoder_block": opt.n_encoder_block,
@@ -108,22 +122,52 @@ class ModelCommander(object):
                 activation=self.params["activation"],
                 norm=self.params["norm"],
             )
+        elif self.params["backbone"] == "unet":
+            decoder = HierarchicalMLPBModule(
+                input_dim=self.params["encoder_h_dim"],
+                # output_dim=y_dim,
+                # output_dim=y_dim,
+                output_dim=None,
+                n_block=self.params["n_decoder_block"],
+                h_dim=self.params["decoder_h_dim"],
+                skip=self.params["skip"],
+                dropout_p=self.params["decoder_dropout_p"],
+                activation=self.params["activation"],
+                norm=self.params["norm"],
+            )
         else:
             raise RuntimeError
 
         if self.params["task_type"] == "multi":
-            model = MultiEncoderDecoderModule(
-                x_dim=x_dim, # 256
-                y_dim=y_dim, # 128
-                y_statistic=y_statistic,
-                encoder_h_dim=self.params["encoder_h_dim"],
-                decoder_h_dim=self.params["decoder_h_dim"],
-                n_decoder_block=self.params["n_decoder_block"],
-                encoder=encoder,
-                decoder=decoder,
-                inputs_decomposer_components=inputs_decomposer_components,
-                targets_decomposer_components=targets_decomposer_components,
-            )
+            if self.params["backbone"] == "mlp":
+                model = MultiEncoderDecoderModule(
+                    x_dim=x_dim, # 256
+                    y_dim=y_dim, # 128
+                    y_statistic=y_statistic,
+                    encoder_h_dim=self.params["encoder_h_dim"],
+                    decoder_h_dim=self.params["decoder_h_dim"],
+                    n_decoder_block=self.params["n_decoder_block"],
+                    encoder=encoder,
+                    decoder=decoder,
+                    inputs_decomposer_components=inputs_decomposer_components,
+                    targets_decomposer_components=targets_decomposer_components,
+                )
+            elif self.params["backbone"] == "unet":
+                model = MultiUnet(
+                    x_dim=x_dim, # 256
+                    y_dim=y_dim, # 128
+                    y_statistic=y_statistic,
+                    encoder_h_dim=self.params["encoder_h_dim"],
+                    decoder_h_dim=self.params["decoder_h_dim"],
+                    n_decoder_block=self.params["n_decoder_block"],
+                    channel=self.opt.channel,
+                    encoder=None,
+                    decoder=decoder,
+                    inputs_decomposer_components=inputs_decomposer_components,
+                    targets_decomposer_components=targets_decomposer_components,
+                )
+            else:
+                raise ValueError
         elif self.params["task_type"] == "cite":
             model = CiteEncoderDecoderModule(
                 x_dim=x_dim,
@@ -230,8 +274,13 @@ class ModelCommander(object):
         lr = self.params["lr"]
         eps = self.params["eps"]
         weight_decay = self.params["weight_decay"]
-        model_parameters = set_weight_decay(module=self.model, weight_decay=weight_decay)
-        optimizer = torch.optim.Adam(model_parameters, lr=lr, eps=eps, weight_decay=weight_decay)
+        if self.opt.backbone == "mlp":
+            model_parameters = set_weight_decay(module=self.model, weight_decay=weight_decay, 
+                                                opt=self.opt)
+
+            optimizer = torch.optim.Adam(model_parameters, lr=lr, eps=eps, weight_decay=weight_decay)
+        else:
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, eps=eps, weight_decay=weight_decay)
         n_epochs = self.params["epoch"]
 
         pct_start = self.params["pct_start"]
@@ -306,16 +355,6 @@ class ModelCommander(object):
                     flush=True,
                 )
         
-                # print(
-                #     f"epoch: {epoch} total time: {end_time - start_time:.1f}, "
-                #     f"epoch time: {end_time - epoch_start_time:.1f}, train_loss:{loss: .3f} "
-                #     f"train_loss_corr:{loss_corr: .3f} "
-                #     f"train_loss_mse:{loss_mse: .3f} "
-                #     f"train_loss_res_mse:{loss_res_mse: .3f} "
-                #     f"train_loss_total_corr:{loss_total_corr: .3f} "
-                #     f"train_pcc:{pcc_epoch: .3f} ",
-                #     flush=True,
-                # )
                 if not self.opt.disable_wandb:
                     log_dict = {
                         "Train/avg_train_loss": avg_train_loss,
@@ -325,24 +364,6 @@ class ModelCommander(object):
                         "Train/loss_mse": loss_mse.item(),
                         "Train/loss_res_mse": loss_res_mse.item(),
                         "Train/loss_total_corr": loss_total_corr.item(),
-                    }
-                    wandb.log(log_dict, step=step_counter)
-            elif self.params["task_type"] == "cite":
-                loss = losses["loss"]
-                loss_corr = losses["loss_corr"]
-                loss_mae = losses["loss_mae"]
-                print(
-                    f"epoch: {epoch} total time: {end_time - start_time:.1f}, epoch time: "
-                    f"{end_time - epoch_start_time:.1f}, loss:{loss: .3f} "
-                    f"loss_corr:{loss_corr: .3f} "
-                    f"loss_mse:{loss_mae: .3f} ",
-                    flush=True,
-                )
-                if not self.opt.disable_wandb:
-                    log_dict = {
-                        "Train/loss_epoch": loss.item(),
-                        "Train/loss_corr": loss_corr.item(), 
-                        "Train/loss_mse": loss_mae.item(),
                     }
                     wandb.log(log_dict, step=step_counter)
             else:
@@ -441,6 +462,7 @@ class ModelCommander(object):
                 targets_values=y,
                 preprocessed_targets_values=preprocessed_y,
                 selected_metadata=selected_metadata,
+                opt=self.opt
             )
         elif self.params["task_type"] == "cite":
             dataset = CITEseqDataset(

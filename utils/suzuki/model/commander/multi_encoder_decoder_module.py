@@ -40,6 +40,10 @@ class MultiEncoderDecoderModule(nn.Module):
         self.correlation_loss_func = correlation_loss
         self.mse_loss_func = nn.MSELoss()
         self.gender_embedding = torch.nn.Parameter(torch.rand(2, encoder_h_dim))
+
+        self.donor_embedding = torch.nn.Parameter(torch.rand(3, encoder_h_dim))
+        self.day_embedding = torch.nn.Parameter(torch.rand(7, encoder_h_dim))
+
         self.encoder_in_fc = nn.Linear(x_dim + self.info_dim, encoder_h_dim)
         decoder_out_fcs = []
         decoder_out_res_fcs = []
@@ -49,11 +53,14 @@ class MultiEncoderDecoderModule(nn.Module):
         self.decoder_out_fcs = nn.ModuleList(decoder_out_fcs)
         self.decoder_out_res_fcs = nn.ModuleList(decoder_out_res_fcs)
 
-    def _encode(self, x, gender_id, info):
+    def _encode(self, x, gender_id, info, day_id, donor_id):
+        # x: (B, 256), gender_id: (B,), info: (B, 7)
         #                                    256 +           7
         h = torch.hstack((x, info.reshape((x.shape[0], self.info_dim)))) # (64, 256)
         h = self.encoder_in_fc(h)
-        h = h + self.gender_embedding[gender_id]
+        # h = h + self.gender_embedding[gender_id] # (B, 2048)
+        h = h + self.gender_embedding[gender_id] + self.day_embedding[day_id - 1] + \
+            self.donor_embedding[donor_id - 1]
         z, _ = self.encoder(h)
         return z
 
@@ -76,7 +83,13 @@ class MultiEncoderDecoderModule(nn.Module):
         y_preds, y_res_preds = self._decode(z, None, None)
         return y_preds, y_res_preds
 
-    def loss(self, x, gender_id, info, y, preprocessed_y, training_length_ratio):
+    def loss(self, x, gender_id, info, day_id, donor_id,
+             y, preprocessed_y, training_length_ratio):
+        # x:            (B, 256)
+        # gender_id:    (B,)
+        # info:         (B, 7)
+        # day_id:       (B,)
+        # donor_id:     (B,)
         ret = {
             "loss": 0,
             "loss_corr": 0,
@@ -86,7 +99,10 @@ class MultiEncoderDecoderModule(nn.Module):
             "pcc": 0,
         }
 
-        z = self._encode(x=x, gender_id=gender_id, info=info)
+        # x shape:  torch.Size([64, 256])
+        # z shape: torch.Size([64, 2048])
+
+        z = self._encode(x=x, gender_id=gender_id, info=info, day_id=day_id, donor_id=donor_id)
         # len:6, (64,128), len:6, (64, 23418)
         y_preds, y_res_preds = self._decode(z, None, None)
     
